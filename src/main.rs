@@ -2,6 +2,7 @@ use tokio::net::TcpListener;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, split};
 use sha1::{Digest, Sha1};
 use std::{io, str};
+use std::net::Shutdown;
 use bytes::BytesMut;
 use tokio::time::{timeout, Duration};
 
@@ -15,13 +16,18 @@ pub async fn main() -> io::Result<()> {
             let (mut reader, mut writer) = split(socket);
             let mut buf_reader = BufReader::new(reader);
 
+            // let error_msg = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\nInvalid headers received.";
+            // if let Err(e) = writer.write_all(error_msg.as_bytes()).await {
+            //     eprintln!("failed to write to socket; err = {:?}", e);
+            // }
+
             let mut websocket_key = None;
             let mut buf = BytesMut::with_capacity(1024 * 16); // 16 kilobytes
 
             // Limit the maximum amount of data read to prevent a denial of service attack.
             while buf.len() <= 1024 * 16 {
                 let mut tmp_buf = vec![0; 1024];
-                match timeout(Duration::from_secs(5), buf_reader.read(&mut tmp_buf)).await {
+                match timeout(Duration::from_secs(60), buf_reader.read(&mut tmp_buf)).await {
                     Ok(Ok(0)) | Err(_) => break, // EOF reached or Timeout, we stop.
                     Ok(Ok(n)) => {
                         buf.extend_from_slice(&tmp_buf[..n]);
