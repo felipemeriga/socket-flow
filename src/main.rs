@@ -1,20 +1,20 @@
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, split, ErrorKind};
+use tokio::net::{TcpListener};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, split, ErrorKind};
 use sha1::{Digest, Sha1};
-use std::{io, str};
+use std::{io};
 use std::io::{Error};
-use std::net::Shutdown;
 use bytes::BytesMut;
 use tokio::time::{timeout, Duration};
+use base64::prelude::*;
 
 #[tokio::main]
 pub async fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:9000").await?;
 
     loop {
-        let (mut socket, _) = listener.accept().await?;
+        let (socket, _) = listener.accept().await?;
         tokio::spawn(async move {
-            let (mut reader, mut writer) = split(socket);
+            let (reader, mut writer) = split(socket);
             let mut buf_reader = BufReader::new(reader);
 
             let mut websocket_key = None;
@@ -159,15 +159,25 @@ async fn read_frame<T: AsyncReadExt + Unpin>(buf_reader: &mut BufReader<T>) -> R
 
     buf_reader.read_exact(&mut header).await?;
 
+    // The first bit in the first byte in the frame tells us whether the current frame is the final fragment of a message
     let final_fragment = (header[0] & 0b10000000) != 0;
+    // The opcode is the last 4 bits of the first byte in a websockets frame, here we are doing a bitwise AND operation & 0b00001111
+    // to get the last 4 bits of the first byte
     let opcode = OpCode::from(header[0] & 0b00001111);
 
+    // As a rule in websockets protocol, if your opcode is a control opcode(ping,pong,close), your message can't be fragmented(split between multiple frames)
     if !final_fragment && opcode.is_control() {
         return Err(Error::new(ErrorKind::InvalidInput, "Control frames must not be fragmented"));
     }
 
+    // According to the websocket protocol specification, the first bit of the second byte of each frame is the "Mask bit"
+    // it tells us if the payload is masked or not
     let masked = (header[1] & 0b10000000) != 0;
 
+
+    // In the second byte of a WebSocket frame, the first bit is used to represent the
+    // Mask bit - which we discussed before - and the next 7 bits are used to represent the
+    // payload length, or the size of the data being sent in the frame.
     let mut length = (header[1] & 0b01111111) as usize;
 
     if length == 126 {
@@ -199,6 +209,13 @@ async fn read_frame<T: AsyncReadExt + Unpin>(buf_reader: &mut BufReader<T>) -> R
     buf_reader.read_exact(&mut payload).await?;
 
     // Unmasking
+    // According to the WebSocket protocol, all frames sent from the client to the server must be
+    // masked by a four-byte value, which is often random. This "masking key" is part of the frame
+    // along with the payload data and helps to prevent specific bytes from being discernible on the
+    // network.
+    // The mask is applied using a simple bitwise XOR operation. Each byte of the payload data
+    // is XOR'd with the corresponding byte (modulo 4) of the 4-byte mask. The server then uses
+    // the masking key to reverse the process, recovering the original data.
     if let Some(mask) = mask {
         for (i, byte) in payload.iter_mut().enumerate() {
             *byte ^= mask[i % 4];
@@ -225,5 +242,5 @@ fn generate_websocket_accept_value(key: String) -> String {
     let mut sha1 = Sha1::new();
     sha1.update(key.as_bytes());
     sha1.update("258EAFA5-E914-47DA-95CA-C5AB0DC85B11".as_bytes());
-    base64::encode(sha1.finalize())
+    BASE64_STANDARD.encode(sha1.finalize())
 }
