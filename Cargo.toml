@@ -1,0 +1,11 @@
+[package]
+name = "simple-websocket"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.38.0", features = ["full"] }
+sha1 = "0.11.0-pre.3"
+bytes = "1.6.0"
+base64 = "0.22.1"
+thiserror = "1.0.61"
