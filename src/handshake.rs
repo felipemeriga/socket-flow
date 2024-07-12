@@ -4,7 +4,7 @@ use bytes::BytesMut;
 use base64::prelude::*;
 use sha1::{Digest, Sha1};
 use tokio::io;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter, ReadHalf, split};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, split};
 use tokio::time::{timeout, Duration};
 use crate::stream::WebsocketsStream;
 
@@ -34,28 +34,46 @@ pub type Result = std::result::Result<(), HandshakeError>;
 pub async fn perform_handshake<T: AsyncRead + AsyncWrite>(stream: T) -> Result {
     let (reader, mut writer) = split(stream);
     let mut buf_reader = BufReader::new(reader);
-    let mut buf_writer = BufWriter::new(writer);
+    // let mut buf_writer = BufWriter::new(writer);
 
     let sec_websockets_accept = header_read(&mut buf_reader).await;
 
     match sec_websockets_accept {
         Some(accept_value) => {
             let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_value);
-            buf_writer.write_all(response.as_bytes()).await.map_err(|source| HandshakeError::WriteError { source })?
+            writer.write_all(response.as_bytes()).await.map_err(|source| HandshakeError::WriteError { source })?
         }
         None => Err(HandshakeError::NoSecWebsocketKey)?
     }
 
-    let websockets_stream = WebsocketsStream {
+    let mut websockets_stream = WebsocketsStream {
         read: buf_reader,
-        write: buf_writer,
+        write: writer,
     };
+
+
+    websockets_stream.poll_messages().await;
+    // Now in websocket mode, read frames
+    // loop {
+    //     match read_frame(&mut buf_reader).await {
+    //         Ok(frame) => {
+    //            println!("received message!")
+    //         }
+    //         Err(e) => {
+    //             eprintln!("Error while reading frame: {}", e);
+    //             break;
+    //         }
+    //     }
+    // }
 
     Ok(())
 }
 
 // Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the
 // entire type of the argument in the function signature (BufReader<ReadHalf<TcpStream>>)
+// The Unpin trait in Rust is used when the exact location of an object in memory needs to remain
+// constant after being pinned. In simple terms, it means that the object doesn't move around in memory
+// Here, we need to use Unpin, because the timeout function puts the passed Future into a Pin<Box<dyn Future>>
 async fn header_read<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Option<String> {
     let mut websocket_header: Option<String> = None;
     let mut websocket_accept: Option<String> = None;
