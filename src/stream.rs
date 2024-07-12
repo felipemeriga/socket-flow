@@ -17,24 +17,32 @@ impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin>WebsocketsStream<R, W> {
                     match frame.opcode {
                         OpCode::Continue => {}
                         OpCode::Text => {
-                            let result = String::from_utf8(frame.clone().payload);
+                            let result = String::from_utf8(frame.payload);
                             match result {
-                                Ok(v) =>  {
-                                    self.write_frame(frame.clone()).await.unwrap();
-                                    println!("{}", v)
-                                },
+                                Ok(v) =>  println!("{}", v),
+
                                 Err(e) => println!("Invalid UTF-8 sequence: {}", e),
                             };
                         }
-                        OpCode::Binary => {}
+                        OpCode::Binary => {
+                            // Handle Binary data here. For example, let's just print the length of the data.
+                            println!("Received binary data of length: {}", frame.payload.len());
+                        }
                         OpCode::Close => {
                             if let Err(e) = self.send_close_frame().await {
                                 eprintln!("Failed to send Close Frame: {}", e);
                             }
                             break;
                         }
-                        OpCode::Ping => {}
-                        OpCode::Pong => {}
+                        OpCode::Ping => {
+                            if let Err(e) = self.send_pong_frame(frame.payload).await {
+                                eprintln!("Failed to send Pong Frame: {}", e);
+                            }
+                        }
+                        OpCode::Pong => {
+                            // handle Pong here or just absorb and do nothing
+                            // You could implement code to log these messages or perform other custom behavior
+                        }
                     }
                 }
                 Err(e) => {
@@ -43,6 +51,11 @@ impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin>WebsocketsStream<R, W> {
                 }
             }
         }
+    }
+
+    async fn send_pong_frame(&mut self, payload: Vec<u8>) -> io::Result<()> {
+        let pong_frame = Frame::new(true, OpCode::Pong, payload);
+        self.write_frame(pong_frame).await
     }
 
     pub async fn read_frame(&mut self) -> Result<Frame, Error> {
@@ -131,13 +144,6 @@ impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin>WebsocketsStream<R, W> {
     }
 
     pub async fn send_close_frame(&mut self) -> io::Result<()> {
-        // empty payload for the close frame
-        let close_frame = Frame {
-            final_fragment: true,
-            opcode: OpCode::Close,
-            payload: Vec::new(),
-        };
-
-        self.write_frame(close_frame).await
+        self.write_frame(Frame::new(true, OpCode::Close, Vec::new())).await
     }
 }
