@@ -1,3 +1,6 @@
+mod handshake;
+mod stream;
+
 use tokio::net::{TcpListener};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, split, ErrorKind};
 use sha1::{Digest, Sha1};
@@ -24,7 +27,9 @@ pub async fn main() -> io::Result<()> {
             while buf.len() <= 1024 * 16 {
                 let mut tmp_buf = vec![0; 1024];
                 match timeout(Duration::from_secs(10), buf_reader.read(&mut tmp_buf)).await {
-                    Ok(Ok(0)) | Err(_) => break, // EOF reached or Timeout, we stop.
+                    Ok(Ok(0)) | Err(_) =>  {
+                        break
+                    } // EOF reached or Timeout, we stop.
                     Ok(Ok(n)) => {
                         buf.extend_from_slice(&tmp_buf[..n]);
                         let s = String::from_utf8_lossy(&buf);
@@ -231,7 +236,7 @@ async fn read_frame<T: AsyncReadExt + Unpin>(buf_reader: &mut BufReader<T>) -> R
 
 fn parse_websocket_key(first_request: String) -> Option<String> {
     for line in first_request.lines() {
-        if line.starts_with("Sec-WebSocket-Key: ") {
+        if line.starts_with("Sec-WebSocket-Key:") {
             return line[18..].split_whitespace().next().map(ToOwned::to_owned);
         }
     }
