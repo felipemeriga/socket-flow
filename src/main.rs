@@ -3,10 +3,7 @@ mod stream;
 mod frame;
 
 use tokio::net::{TcpListener};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use sha1::{Digest};
 use std::{io};
-use base64::prelude::*;
 use crate::handshake::perform_handshake;
 
 #[tokio::main]
