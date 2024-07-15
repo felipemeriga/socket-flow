@@ -46,10 +46,7 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite>(stream: T) -> Result {
         None => Err(HandshakeError::NoSecWebsocketKey)?
     }
 
-    let mut websockets_stream = WebsocketsStream {
-        read: buf_reader,
-        write: writer,
-    };
+    let mut websockets_stream = WebsocketsStream::new(buf_reader, writer);
 
 
     websockets_stream.poll_messages().await;

@@ -1,21 +1,49 @@
 use std::io;
 use std::io::{Error, ErrorKind};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::time::{timeout, Duration};
 use crate::frame::{Frame, MAX_PAYLOAD_SIZE, OpCode};
 
 pub struct WebsocketsStream<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> {
     pub read: R,
-    pub write: W
+    pub write: W,
+    fragmented_message: Option<Vec<u8>>
 }
 
 impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin>WebsocketsStream<R, W> {
+
+    pub fn new(read: R, write: W) -> Self {
+        let fragmented_message = Some(Vec::new());
+        Self { read, write, fragmented_message }
+    }
+
+    // TODO: Add a return to that function, so the main user of this package can receive the errors instead
+    // of the own package printing the error like:  eprintln!("Error while reading frame: {}", e);
     pub async fn poll_messages(&mut self) {
         // Now in websocket mode, read frames
         loop {
             match self.read_frame().await {
                 Ok(frame) => {
                     match frame.opcode {
-                        OpCode::Continue => {}
+                        OpCode::Continue => {
+                            // Check to see if there is an existing-fragmented message
+                            // Append the payload to the existing one
+                            if let Some(ref mut fragmented_message) = self.fragmented_message {
+                                fragmented_message.extend_from_slice(&frame.payload);
+
+                                // If it's the final fragment, then you can process the complete message here.
+                                // You could move the message to somewhere else as well.
+                                if frame.final_fragment {
+                                    println!("Received fragmented message with total length: {}", fragmented_message.len());
+                                    // Clean the buffer after processing
+                                    self.fragmented_message = None;
+                                }
+                            } else {
+                                eprintln!("Invalid continuation frame: no fragmented message to continue");
+                                break;
+                            }
+
+                        }
                         OpCode::Text => {
                             let result = String::from_utf8(frame.payload);
                             match result {
@@ -110,7 +138,18 @@ impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin>WebsocketsStream<R, W> {
         };
 
         let mut payload = vec![0u8; length];
-        self.read.read_exact(&mut payload).await?;
+
+        // Adding a timeout function from Tokio, to avoid malicious TCP connections, that passes through handshake
+        // and starts to send invalid websockets frames to overload the socket
+        // Since HTTP is an application protocol built on the top of TCP, a malicious TCP connection may send a string with the HTTP content in the
+        // first connection, to simulate a handshake, and start sending huge payloads.
+        // TODO - Need to verify if this is going to work with Continue Opcodes, and with valid big payloads
+        let read_result = timeout(Duration::from_secs(5), self.read.read_exact(&mut payload)).await;
+        match read_result {
+            Ok(Ok(_)) => {} // Continue processing the payload
+            Ok(Err(e)) => return Err(e), // An error occurred while reading
+            Err(_e) => return Err(Error::new(io::ErrorKind::TimedOut, "Timed out reading from socket")), // Reading from the socket timed out
+        }
 
         // Unmasking
         // According to the WebSocket protocol, all frames sent from the client to the server must be
