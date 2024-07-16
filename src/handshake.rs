@@ -34,7 +34,10 @@ pub enum HandshakeError {
 }
 pub type Result = std::result::Result<(), HandshakeError>;
 
-
+// Using Send trait because we are going to run the process to read frames from the socket concurrently
+// TCPStream from tokio implements Send
+// Using static, because tokio::spawn returns a JoinHandle, because the spawned task could outilive the
+// lifetime of the function call to tokio::spawn.
 pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(stream: T) -> Result {
     let (reader, mut writer) = split(stream);
     let mut buf_reader = BufReader::new(reader);
@@ -59,22 +62,15 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
         Stream::new(buf_reader, writer, read_tx, write_rx);
     let mut ws_connection = WSConnection::new(read_rx, write_tx);
 
+    // We are spawning poll_messages which is the method for reading the frames from the socket
+    // we need to do it concurrently, because we need this method running, while the end-user can have
+    // a channel returned, for receiving and sending messages
+    // Since ReadHalf and WriteHalf implements Send and Sync, it's ok to send them over spawn
+    // Additionally, since our BufReader doesn't change, we only call read methods from it, there is no
+    // need to wrap it in an Arc<Mutex>, also because poll_messages read frames sequentially.
     tokio::spawn(async move {
         stream.poll_messages().await;
     });
-
-    // Now in websocket mode, read frames
-    // loop {
-    //     match read_frame(&mut buf_reader).await {
-    //         Ok(frame) => {
-    //            println!("received message!")
-    //         }
-    //         Err(e) => {
-    //             eprintln!("Error while reading frame: {}", e);
-    //             break;
-    //         }
-    //     }
-    // }
 
     Ok(())
 }
