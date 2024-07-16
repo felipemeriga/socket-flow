@@ -1,20 +1,23 @@
 use std::io;
 use std::io::{Error, ErrorKind};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::time::{timeout, Duration};
 use crate::frame::{Frame, MAX_PAYLOAD_SIZE, OpCode};
 
-pub struct WebsocketsStream<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> {
+pub struct Stream<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> {
     pub read: R,
     pub write: W,
-    fragmented_message: Option<Vec<u8>>
+    fragmented_message: Option<Vec<u8>>,
+    read_tx: UnboundedSender<Vec<u8>>,
+    write_rx: UnboundedReceiver<Vec<u8>>
 }
 
-impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin>WebsocketsStream<R, W> {
+impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
 
-    pub fn new(read: R, write: W) -> Self {
+    pub fn new(read: R, write: W, read_tx: UnboundedSender<Vec<u8>>, write_rx: UnboundedReceiver<Vec<u8>>) -> Self {
         let fragmented_message = Some(Vec::new());
-        Self { read, write, fragmented_message }
+        Self { read, write, fragmented_message, read_tx, write_rx }
     }
 
     // TODO: Add a return to that function, so the main user of this package can receive the errors instead
@@ -143,7 +146,8 @@ impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin>WebsocketsStream<R, W> {
         // and starts to send invalid websockets frames to overload the socket
         // Since HTTP is an application protocol built on the top of TCP, a malicious TCP connection may send a string with the HTTP content in the
         // first connection, to simulate a handshake, and start sending huge payloads.
-        // TODO - Need to verify if this is going to work with Continue Opcodes, and with valid big payloads
+        // TODO - Need to verify if this is going to work with Continue Opcodes, and with valid big payloads, also with valid connections
+        // that has a slow network
         let read_result = timeout(Duration::from_secs(5), self.read.read_exact(&mut payload)).await;
         match read_result {
             Ok(Ok(_)) => {} // Continue processing the payload

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use base64::prelude::BASE64_STANDARD;
 use thiserror::Error;
 use bytes::BytesMut;
@@ -5,8 +6,11 @@ use base64::prelude::*;
 use sha1::{Digest, Sha1};
 use tokio::io;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, split};
+use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
-use crate::stream::WebsocketsStream;
+use crate::connection::WSConnection;
+use crate::stream::Stream;
 
 
 const SEC_WEBSOCKETS_KEY: &str = "Sec-WebSocket-Key:";
@@ -31,10 +35,9 @@ pub enum HandshakeError {
 pub type Result = std::result::Result<(), HandshakeError>;
 
 
-pub async fn perform_handshake<T: AsyncRead + AsyncWrite>(stream: T) -> Result {
+pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(stream: T) -> Result {
     let (reader, mut writer) = split(stream);
     let mut buf_reader = BufReader::new(reader);
-    // let mut buf_writer = BufWriter::new(writer);
 
     let sec_websockets_accept = header_read(&mut buf_reader).await;
 
@@ -46,10 +49,20 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite>(stream: T) -> Result {
         None => Err(HandshakeError::NoSecWebsocketKey)?
     }
 
-    let mut websockets_stream = WebsocketsStream::new(buf_reader, writer);
+    // We are using unbounded async channels to communicate the frames received from the client
+    // and another channel to send messages from server to client
+    let (write_tx, write_rx) = unbounded_channel();
+    let (read_tx, read_rx) = unbounded_channel();
 
 
-    websockets_stream.poll_messages().await;
+    let mut stream =
+        Stream::new(buf_reader, writer, read_tx, write_rx);
+    let mut ws_connection = WSConnection::new(read_rx, write_tx);
+
+    tokio::spawn(async move {
+        stream.poll_messages().await;
+    });
+
     // Now in websocket mode, read frames
     // loop {
     //     match read_frame(&mut buf_reader).await {
