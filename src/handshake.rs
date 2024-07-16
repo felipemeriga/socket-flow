@@ -1,3 +1,4 @@
+use std::f32::consts::E;
 use std::sync::Arc;
 use base64::prelude::BASE64_STANDARD;
 use thiserror::Error;
@@ -21,18 +22,19 @@ const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Upgrade: websocket\r\n\
         Sec-WebSocket-Accept: {}\r\n\
         \r\n";
+
 #[derive(Error, Debug)]
 pub enum HandshakeError {
-    #[error("No Sec-WebSocket-Key header present in the request")]
+    #[error("Couldn't find Sec-WebSocket-Key header in the request")]
     NoSecWebsocketKey,
 
-    #[error("Error when writing to socket: {source}")]
-    WriteError {
+    #[error("IO Error happened: {source}")]
+    IOError {
         #[from]
         source: io::Error,
     },
 }
-pub type Result = std::result::Result<(), HandshakeError>;
+pub type Result = std::result::Result<WSConnection, HandshakeError>;
 
 // Using Send trait because we are going to run the process to read frames from the socket concurrently
 // TCPStream from tokio implements Send
@@ -47,7 +49,7 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
     match sec_websockets_accept {
         Some(accept_value) => {
             let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_value);
-            writer.write_all(response.as_bytes()).await.map_err(|source| HandshakeError::WriteError { source })?
+            writer.write_all(response.as_bytes()).await.map_err(|source| HandshakeError::IOError { source })?
         }
         None => Err(HandshakeError::NoSecWebsocketKey)?
     }
@@ -72,7 +74,7 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
         stream.poll_messages().await;
     });
 
-    Ok(())
+    Ok(ws_connection)
 }
 
 // Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the
@@ -89,7 +91,8 @@ async fn header_read<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Option<Stri
     while header_buf.len() <= 1024 * 16 {
         let mut tmp_buf = vec![0; 1024];
         match timeout(Duration::from_secs(10), buf_reader.read(&mut tmp_buf)).await {
-            Ok(Ok(0)) | Err(_) => { break } // EOF reached or Timeout, we stop.
+            Ok(Ok(0)) | Err(_) => { break } // EOF reached or Timeout, we stop. In the case of EOF
+            // there is no need to log or return EOF or timeout errors
             Ok(Ok(n)) => {
                 header_buf.extend_from_slice(&tmp_buf[..n]);
                 let s = String::from_utf8_lossy(&header_buf);
@@ -101,6 +104,7 @@ async fn header_read<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Option<Stri
             _ => {}
         }
     }
+
     match websocket_header {
         Some(header) => {
             let key_value = parse_websocket_key(header);

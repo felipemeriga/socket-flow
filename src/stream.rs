@@ -48,12 +48,16 @@ impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
 
                         }
                         OpCode::Text => {
-                            let result = String::from_utf8(frame.payload);
-                            match result {
-                                Ok(v) =>  println!("{}", v),
-
-                                Err(e) => println!("Invalid UTF-8 sequence: {}", e),
-                            };
+                            self.read_tx.send(frame.payload).unwrap();
+                            // match result {
+                            //     Ok(v) => {
+                            //         println!("Received text frame, sending it to the channel");
+                            //         self.read_tx.send(frame.)
+                            //     },
+                            //
+                            //     Err(e) => println!("Invalid UTF-8 sequence: {}", e),
+                            // };
+                            break;
                         }
                         OpCode::Binary => {
                             // Handle Binary data here. For example, let's just print the length of the data.

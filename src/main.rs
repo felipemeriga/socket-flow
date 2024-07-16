@@ -5,6 +5,7 @@ mod connection;
 
 use tokio::net::{TcpListener};
 use std::{io};
+use tokio::io::AsyncReadExt;
 use crate::handshake::perform_handshake;
 
 #[tokio::main]
@@ -16,8 +17,14 @@ pub async fn main() -> io::Result<()> {
         tokio::spawn(async move {
             let result = perform_handshake(socket).await;
             match result {
-                Ok(_) => {}
-                Err(_) => {}
+                Ok(mut ws_connection) => {
+                    while let Some(message) = ws_connection.read.recv().await {
+                        println!("GOT = {}", String::from_utf8(message).unwrap());
+                    }
+                }
+                Err(e) => {
+                    println!("failed to read from connection: {}", e);
+                }
             }
         });
     }
