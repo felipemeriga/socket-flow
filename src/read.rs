@@ -1,11 +1,11 @@
+use crate::frame::{Frame, OpCode, MAX_PAYLOAD_SIZE};
 use std::io;
 use std::io::{Error, ErrorKind};
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::io::{AsyncReadExt};
 use tokio::sync::mpsc::error::SendError;
+use tokio::sync::mpsc::{UnboundedSender};
 use tokio::time::{timeout, Duration};
-use crate::frame::{Frame, MAX_PAYLOAD_SIZE, OpCode};
 
 #[derive(Error, Debug)]
 pub enum StreamError {
@@ -16,24 +16,31 @@ pub enum StreamError {
     },
 
     #[error("{source}")]
-    SendError {
+    BroadcastSendError {
         #[from]
         source: SendError<Vec<u8>>,
     },
+
+    #[error("{source}")]
+    InternalSendError {
+        #[from]
+        source: SendError<Frame>,
+    },
 }
 
-pub struct Stream<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> {
+pub struct ReadStream<R: AsyncReadExt + Unpin> {
     pub read: R,
-    pub write: W,
     fragmented_message: Option<Vec<u8>>,
     read_tx: UnboundedSender<Vec<u8>>,
-    write_rx: UnboundedReceiver<Vec<u8>>,
+    internal_tx: UnboundedSender<Frame>
 }
 
-impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
-    pub fn new(read: R, write: W, read_tx: UnboundedSender<Vec<u8>>, write_rx: UnboundedReceiver<Vec<u8>>) -> Self {
+impl<R: AsyncReadExt + Unpin> ReadStream<R> {
+
+
+    pub fn new(read: R, read_tx: UnboundedSender<Vec<u8>>, internal_tx: UnboundedSender<Frame>) -> Self {
         let fragmented_message = Some(Vec::new());
-        Self { read, write, fragmented_message, read_tx, write_rx }
+        Self { read, fragmented_message, read_tx, internal_tx }
     }
 
     // TODO: Add more descriptive errors for each Opcode handling, using thiserror
@@ -45,6 +52,7 @@ impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
                 Ok(frame) => {
                     match frame.opcode {
                         OpCode::Continue => {
+                            // TODO - Find out a better way to handle this case
                             // Check to see if there is an existing-fragmented message
                             // Append the payload to the existing one
                             if let Some(ref mut fragmented_message) = self.fragmented_message {
@@ -72,12 +80,14 @@ impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
                         OpCode::Close => {
                             if let Err(e) = self.send_close_frame().await {
                                 eprintln!("Failed to send Close Frame: {}", e);
+                                Err(e)?
                             }
                             break;
                         }
                         OpCode::Ping => {
                             if let Err(e) = self.send_pong_frame(frame.payload).await {
                                 eprintln!("Failed to send Pong Frame: {}", e);
+                                Err(e)?
                             }
                         }
                         OpCode::Pong => {
@@ -92,9 +102,9 @@ impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
         Ok(())
     }
 
-    async fn send_pong_frame(&mut self, payload: Vec<u8>) -> io::Result<()> {
+    async fn send_pong_frame(&mut self, payload: Vec<u8>) -> Result<(), SendError<Frame>> {
         let pong_frame = Frame::new(true, OpCode::Pong, payload);
-        self.write_frame(pong_frame).await
+        return self.internal_tx.send(pong_frame);
     }
 
     pub async fn read_frame(&mut self) -> Result<Frame, Error> {
@@ -110,13 +120,15 @@ impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
 
         // As a rule in websockets protocol, if your opcode is a control opcode(ping,pong,close), your message can't be fragmented(split between multiple frames)
         if !final_fragment && opcode.is_control() {
-            return Err(Error::new(ErrorKind::InvalidInput, "Control frames must not be fragmented"));
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Control frames must not be fragmented",
+            ));
         }
 
         // According to the websocket protocol specification, the first bit of the second byte of each frame is the "Mask bit"
         // it tells us if the payload is masked or not
         let masked = (header[1] & 0b10000000) != 0;
-
 
         // In the second byte of a WebSocket frame, the first bit is used to represent the
         // Mask bit - which we discussed before - and the next 7 bits are used to represent the
@@ -134,10 +146,7 @@ impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
         }
 
         if length > MAX_PAYLOAD_SIZE {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "Payload too large",
-            ));
+            return Err(Error::new(ErrorKind::InvalidData, "Payload too large"));
         }
 
         let mask = if masked {
@@ -158,9 +167,14 @@ impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
         // that has a slow network
         let read_result = timeout(Duration::from_secs(5), self.read.read_exact(&mut payload)).await;
         match read_result {
-            Ok(Ok(_)) => {} // Continue processing the payload
+            Ok(Ok(_)) => {}              // Continue processing the payload
             Ok(Err(e)) => return Err(e), // An error occurred while reading
-            Err(_e) => return Err(Error::new(io::ErrorKind::TimedOut, "Timed out reading from socket")), // Reading from the socket timed out
+            Err(_e) => {
+                return Err(Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Timed out reading from socket",
+                ))
+            } // Reading from the socket timed out
         }
 
         // Unmasking
@@ -184,18 +198,20 @@ impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
         })
     }
 
-    pub async fn write_frame(&mut self, frame: Frame) -> io::Result<()> {
-        let first_byte = (frame.final_fragment as u8) << 7 | frame.opcode.as_u8();
-        let initial_payload_len = frame.payload.len() as u8;
+    // pub async fn write_frame(&mut self, frame: Frame) -> io::Result<()> {
+    //     let first_byte = (frame.final_fragment as u8) << 7 | frame.opcode.as_u8();
+    //     let initial_payload_len = frame.payload.len() as u8;
+    //
+    //     self.write
+    //         .write_all(&[first_byte, initial_payload_len])
+    //         .await?;
+    //     self.write.write_all(&frame.payload).await?;
+    //
+    //     Ok(())
+    // }
 
-        self.write.write_all(&[first_byte, initial_payload_len]).await?;
-        self.write.write_all(&frame.payload).await?;
-
-        Ok(())
-    }
-
-    pub async fn send_close_frame(&mut self) -> io::Result<()> {
-        self.write_frame(Frame::new(true, OpCode::Close, Vec::new())).await
+    pub async fn send_close_frame(&mut self) -> Result<(), SendError<Frame>> {
+        return self.internal_tx.send(Frame::new(true, OpCode::Close, Vec::new()));
     }
 }
 
@@ -203,7 +219,7 @@ impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
 // holds the ownership to BufReader, WriteHalf, read_tx and write_tx. If the created struct goes out
 // of scopes, it will be dropped automatically, also the another dependencies to the unbounded channels
 // will be closed.
-impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Drop for Stream<R, W> {
+impl<R: AsyncReadExt + Unpin> Drop for ReadStream<R> {
     fn drop(&mut self) {
         // No need to manually drop parts of our struct, Rust will take care of it automatically.
     }

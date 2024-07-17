@@ -1,5 +1,3 @@
-
-
 pub const MAX_PAYLOAD_SIZE: usize = 10 * 1024 * 1024; // 10MB
 #[derive(Debug, Clone)]
 pub enum OpCode {
@@ -50,10 +48,13 @@ pub struct Frame {
 
 impl Frame {
     pub fn new(final_fragment: bool, opcode: OpCode, payload: Vec<u8>) -> Self {
-        Self { final_fragment, opcode, payload }
+        Self {
+            final_fragment,
+            opcode,
+            payload,
+        }
     }
 }
-
 
 // pub async fn read_frame<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Result<Frame, Error> {
 //     let mut header = [0u8; 2];

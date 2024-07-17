@@ -2,7 +2,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 pub struct WSConnection {
     pub read: UnboundedReceiver<Vec<u8>>,
-    pub write: UnboundedSender<Vec<u8>>
+    pub write: UnboundedSender<Vec<u8>>,
 }
 
 impl WSConnection {
@@ -10,5 +10,3 @@ impl WSConnection {
         Self { read, write }
     }
 }
-
-
