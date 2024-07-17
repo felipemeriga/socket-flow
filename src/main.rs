@@ -5,7 +5,6 @@ mod connection;
 
 use tokio::net::{TcpListener};
 use std::{io};
-use tokio::io::AsyncReadExt;
 use crate::handshake::perform_handshake;
 
 #[tokio::main]
@@ -21,6 +20,7 @@ pub async fn main() -> io::Result<()> {
                     while let Some(message) = ws_connection.read.recv().await {
                         println!("GOT = {}", String::from_utf8(message).unwrap());
                     }
+                    println!("stopped receiving updates")
                 }
                 Err(e) => {
                     println!("failed to read from connection: {}", e);

@@ -1,5 +1,3 @@
-use std::f32::consts::E;
-use std::sync::Arc;
 use base64::prelude::BASE64_STANDARD;
 use thiserror::Error;
 use bytes::BytesMut;
@@ -8,10 +6,9 @@ use sha1::{Digest, Sha1};
 use tokio::io;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, split};
 use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use crate::connection::WSConnection;
-use crate::stream::Stream;
+use crate::stream::{Stream};
 
 
 const SEC_WEBSOCKETS_KEY: &str = "Sec-WebSocket-Key:";
@@ -62,7 +59,7 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
 
     let mut stream =
         Stream::new(buf_reader, writer, read_tx, write_rx);
-    let mut ws_connection = WSConnection::new(read_rx, write_tx);
+    let ws_connection = WSConnection::new(read_rx, write_tx);
 
     // We are spawning poll_messages which is the method for reading the frames from the socket
     // we need to do it concurrently, because we need this method running, while the end-user can have
@@ -71,7 +68,12 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
     // Additionally, since our BufReader doesn't change, we only call read methods from it, there is no
     // need to wrap it in an Arc<Mutex>, also because poll_messages read frames sequentially.
     tokio::spawn(async move {
-        stream.poll_messages().await;
+        match stream.poll_messages().await {
+            Err(err) => {
+                eprintln!("Received error from stream: {}", err)
+            }
+            _ => {}
+        }
     });
 
     Ok(ws_connection)

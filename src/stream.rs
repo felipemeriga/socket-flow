@@ -1,28 +1,44 @@
 use std::io;
 use std::io::{Error, ErrorKind};
+use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::error::SendError;
 use tokio::time::{timeout, Duration};
 use crate::frame::{Frame, MAX_PAYLOAD_SIZE, OpCode};
+
+#[derive(Error, Debug)]
+pub enum StreamError {
+    #[error("{source}")]
+    IOError {
+        #[from]
+        source: io::Error,
+    },
+
+    #[error("{source}")]
+    SendError {
+        #[from]
+        source: SendError<Vec<u8>>,
+    },
+}
 
 pub struct Stream<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> {
     pub read: R,
     pub write: W,
     fragmented_message: Option<Vec<u8>>,
     read_tx: UnboundedSender<Vec<u8>>,
-    write_rx: UnboundedReceiver<Vec<u8>>
+    write_rx: UnboundedReceiver<Vec<u8>>,
 }
 
-impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
-
+impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
     pub fn new(read: R, write: W, read_tx: UnboundedSender<Vec<u8>>, write_rx: UnboundedReceiver<Vec<u8>>) -> Self {
         let fragmented_message = Some(Vec::new());
         Self { read, write, fragmented_message, read_tx, write_rx }
     }
 
-    // TODO: Add a return to that function, so the main user of this package can receive the errors instead
+    // TODO: Add more descriptive errors for each Opcode handling, using thiserror
     // of the own package printing the error like:  eprintln!("Error while reading frame: {}", e);
-    pub async fn poll_messages(&mut self) {
+    pub async fn poll_messages(&mut self) -> Result<(), StreamError> {
         // Now in websocket mode, read frames
         loop {
             match self.read_frame().await {
@@ -45,19 +61,9 @@ impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
                                 eprintln!("Invalid continuation frame: no fragmented message to continue");
                                 break;
                             }
-
                         }
                         OpCode::Text => {
-                            self.read_tx.send(frame.payload).unwrap();
-                            // match result {
-                            //     Ok(v) => {
-                            //         println!("Received text frame, sending it to the channel");
-                            //         self.read_tx.send(frame.)
-                            //     },
-                            //
-                            //     Err(e) => println!("Invalid UTF-8 sequence: {}", e),
-                            // };
-                            break;
+                            self.read_tx.send(frame.payload)?
                         }
                         OpCode::Binary => {
                             // Handle Binary data here. For example, let's just print the length of the data.
@@ -80,12 +86,10 @@ impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
                         }
                     }
                 }
-                Err(e) => {
-                    eprintln!("Error while reading frame: {}", e);
-                    break;
-                }
+                Err(error) => Err(error)?
             }
         }
+        Ok(())
     }
 
     async fn send_pong_frame(&mut self, payload: Vec<u8>) -> io::Result<()> {
@@ -192,5 +196,15 @@ impl <R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Stream<R, W> {
 
     pub async fn send_close_frame(&mut self) -> io::Result<()> {
         self.write_frame(Frame::new(true, OpCode::Close, Vec::new())).await
+    }
+}
+
+// The Stream contains the split socket and unbounded channels, since Stream is the only one that
+// holds the ownership to BufReader, WriteHalf, read_tx and write_tx. If the created struct goes out
+// of scopes, it will be dropped automatically, also the another dependencies to the unbounded channels
+// will be closed.
+impl<R: AsyncReadExt + Unpin, W: AsyncWriteExt + Unpin> Drop for Stream<R, W> {
+    fn drop(&mut self) {
+        // No need to manually drop parts of our struct, Rust will take care of it automatically.
     }
 }
