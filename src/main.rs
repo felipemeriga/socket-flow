@@ -19,7 +19,8 @@ pub async fn main() -> io::Result<()> {
             match result {
                 Ok(mut ws_connection) => {
                     while let Some(message) = ws_connection.read.recv().await {
-                        println!("GOT = {}", String::from_utf8(message).unwrap());
+                        // println!("GOT = {}", String::from_utf8(message).unwrap());
+                        ws_connection.write.send(message).unwrap();
                     }
                     println!("stopped receiving updates")
                 }
