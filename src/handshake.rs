@@ -1,13 +1,16 @@
+use crate::connection::WSConnection;
+use crate::read::{ReadStream};
 use base64::prelude::BASE64_STANDARD;
-use thiserror::Error;
-use bytes::BytesMut;
 use base64::prelude::*;
+use bytes::BytesMut;
 use sha1::{Digest, Sha1};
+use thiserror::Error;
 use tokio::io;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, split};
+use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc::unbounded_channel;
 use tokio::time::{timeout, Duration};
-use crate::stream::WebsocketsStream;
-
+use crate::frame::Frame;
+use crate::write::WriteStream;
 
 const SEC_WEBSOCKETS_KEY: &str = "Sec-WebSocket-Key:";
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -17,56 +20,73 @@ const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Upgrade: websocket\r\n\
         Sec-WebSocket-Accept: {}\r\n\
         \r\n";
+
 #[derive(Error, Debug)]
 pub enum HandshakeError {
-    #[error("No Sec-WebSocket-Key header present in the request")]
+    #[error("Couldn't find Sec-WebSocket-Key header in the request")]
     NoSecWebsocketKey,
 
-    #[error("Error when writing to socket: {source}")]
-    WriteError {
+    #[error("IO Error happened: {source}")]
+    IOError {
         #[from]
         source: io::Error,
     },
 }
-pub type Result = std::result::Result<(), HandshakeError>;
+pub type Result = std::result::Result<WSConnection, HandshakeError>;
 
-
-pub async fn perform_handshake<T: AsyncRead + AsyncWrite>(stream: T) -> Result {
+// Using Send trait because we are going to run the process to read frames from the socket concurrently
+// TCPStream from tokio implements Send
+// Using static, because tokio::spawn returns a JoinHandle, because the spawned task could outilive the
+// lifetime of the function call to tokio::spawn.
+pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(stream: T) -> Result {
     let (reader, mut writer) = split(stream);
     let mut buf_reader = BufReader::new(reader);
-    // let mut buf_writer = BufWriter::new(writer);
 
     let sec_websockets_accept = header_read(&mut buf_reader).await;
 
     match sec_websockets_accept {
         Some(accept_value) => {
             let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_value);
-            writer.write_all(response.as_bytes()).await.map_err(|source| HandshakeError::WriteError { source })?
+            writer
+                .write_all(response.as_bytes())
+                .await
+                .map_err(|source| HandshakeError::IOError { source })?
         }
-        None => Err(HandshakeError::NoSecWebsocketKey)?
+        None => Err(HandshakeError::NoSecWebsocketKey)?,
     }
 
-    let mut websockets_stream = WebsocketsStream {
-        read: buf_reader,
-        write: writer,
-    };
+    // We are using unbounded async channels to communicate the frames received from the client
+    // and another channel to send messages from server to client
+    let (write_tx, write_rx) = unbounded_channel();
+    let (read_tx, read_rx) = unbounded_channel();
 
+    let (internal_tx, internal_rx) = unbounded_channel::<Frame>();
 
-    websockets_stream.poll_messages().await;
-    // Now in websocket mode, read frames
-    // loop {
-    //     match read_frame(&mut buf_reader).await {
-    //         Ok(frame) => {
-    //            println!("received message!")
-    //         }
-    //         Err(e) => {
-    //             eprintln!("Error while reading frame: {}", e);
-    //             break;
-    //         }
-    //     }
-    // }
+    let mut read_stream = ReadStream::new(buf_reader, read_tx, internal_tx);
+    let mut write_stream = WriteStream::new(writer, write_rx, internal_rx);
 
-    Ok(())
+    let ws_connection = WSConnection::new(read_rx, write_tx);
+
+    // We are spawning poll_messages which is the method for reading the frames from the socket
+    // we need to do it concurrently, because we need this method running, while the end-user can have
+    // a channel returned, for receiving and sending messages
+    // Since ReadHalf and WriteHalf implements Send and Sync, it's ok to send them over spawn
+    // Additionally, since our BufReader doesn't change, we only call read methods from it, there is no
+    // need to wrap it in an Arc<Mutex>, also because poll_messages read frames sequentially.
+    tokio::spawn(async move {
+        match read_stream.poll_messages().await {
+            Err(err) => {
+                eprintln!("Received error from stream: {}", err)
+            }
+            _ => {}
+        }
+    });
+
+    tokio::spawn(async move {
+        write_stream.run().await;
+    });
+
+    Ok(ws_connection)
 }
 
 // Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the
@@ -83,7 +103,8 @@ async fn header_read<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Option<Stri
     while header_buf.len() <= 1024 * 16 {
         let mut tmp_buf = vec![0; 1024];
         match timeout(Duration::from_secs(10), buf_reader.read(&mut tmp_buf)).await {
-            Ok(Ok(0)) | Err(_) => { break } // EOF reached or Timeout, we stop.
+            Ok(Ok(0)) | Err(_) => break, // EOF reached or Timeout, we stop. In the case of EOF
+            // there is no need to log or return EOF or timeout errors
             Ok(Ok(n)) => {
                 header_buf.extend_from_slice(&tmp_buf[..n]);
                 let s = String::from_utf8_lossy(&header_buf);
@@ -95,6 +116,7 @@ async fn header_read<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Option<Stri
             _ => {}
         }
     }
+
     match websocket_header {
         Some(header) => {
             let key_value = parse_websocket_key(header);
