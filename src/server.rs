@@ -1,36 +1,48 @@
 use std::io;
+use std::sync::{Arc};
 use tokio::net::TcpListener;
+use crate::connection::{ConnectionPool};
 use crate::handshake::perform_handshake;
 
 pub struct Server {
-    port: i64
+    port: i64,
+    pub connection_pool: Arc<ConnectionPool>,
+    pub handle: Option<tokio::task::JoinHandle<io::Result<()>>>,
 }
 
 impl Server {
-    pub fn new(port: i64) -> Self {
-        Self { port }
+    pub async fn new(port: i64) -> Self {
+        let mut server = Self {
+            port,
+            connection_pool: Arc::new(ConnectionPool::new()),
+            handle: None,
+        };
+        server.run_server().await.expect("TODO: panic message");
+        server
     }
 
     pub async fn run_server(&mut self) -> io::Result<()> {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", self.port)).await?;
+        let port = self.port.clone();
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+        let pool = Arc::clone(&self.connection_pool);
 
-        loop {
-            let (socket, _) = listener.accept().await?;
-            tokio::spawn(async move {
-                let result = perform_handshake(socket).await;
-                match result {
-                    Ok(mut ws_connection) => {
-                        while let Some(message) = ws_connection.read.recv().await {
-                            // println!("GOT = {}", String::from_utf8(message).unwrap());
-                            ws_connection.write.send(message).unwrap();
+        let handle = tokio::spawn(async move {
+            loop {
+                let (socket, socket_address) = listener.accept().await?;
+                let conn_pool = Arc::clone(&pool);
+
+                tokio::spawn(async move {
+                    let result = perform_handshake(socket).await;
+                    match result {
+                        Ok(ws_connection) => {
+                            conn_pool.add_connection(socket_address, ws_connection).await;
                         }
-                        println!("stopped receiving updates")
+                        Err(e) => println!("Failed to read from the connection: {}", e),
                     }
-                    Err(e) => {
-                        println!("failed to read from connection: {}", e);
-                    }
-                }
-            });
-        }
+                });
+            }
+        });
+        self.handle = Some(handle);
+        Ok(())
     }
 }
