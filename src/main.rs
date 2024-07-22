@@ -6,9 +6,9 @@ mod write;
 mod server;
 
 use std::io;
-use crate::server::run;
+use crate::server::{Server};
 
 #[tokio::main]
 pub async fn main() -> io::Result<()> {
-    run().await
+    Server::new(9000).run_server().await
 }
