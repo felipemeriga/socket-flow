@@ -13,7 +13,8 @@ sha1 = "0.11.0-pre.3"
 bytes = "1.6.0"
 base64 = "0.22.1"
 thiserror = "1.0.61"
-
+log = "0.4.22"
+env_logger = "0.11.4"
 
 [[example]]
-name = "custom_server"
+name = "internal_server"

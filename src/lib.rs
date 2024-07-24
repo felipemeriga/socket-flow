@@ -1,6 +1,5 @@
-pub mod server;
 mod read;
-mod handshake;
+pub mod handshake;
 mod frame;
 mod connection;
 mod write;
