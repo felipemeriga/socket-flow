@@ -1,6 +1,7 @@
 use std::io;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedReceiver;
+use crate::error::StreamError;
 use crate::frame::{Frame, OpCode};
 
 pub struct WriteStream<W: AsyncWriteExt + Unpin> {
@@ -14,7 +15,7 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
         Self { write, broadcast_rx, internal_rx }
     }
 
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self) -> Result<(), StreamError>{
         loop {
             tokio::select! {
                 Some(data) = self.broadcast_rx.recv() => {
@@ -23,20 +24,15 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
                         opcode: OpCode::Text,
                         payload: data,
                     };
-                    if let Err(e) = self.write_frame(frame).await {
-                        eprintln!("Error writing frame: {:?}", e);
-                        break;
-                    }
+                    self.write_frame(frame).await?
                 }
                 Some(frame) = self.internal_rx.recv() => {
-                    if let Err(e) = self.write_frame(frame).await {
-                        eprintln!("Error writing frame: {:?}", e);
-                        break;
-                    }
+                   self.write_frame(frame).await?
                 }
                 else => break,
             }
         }
+        Ok(())
     }
 
     pub async fn write_frame(&mut self, frame: Frame) -> io::Result<()> {

@@ -15,11 +15,15 @@ async fn handle_connection(_: SocketAddr, stream: TcpStream) {
                             break;
                         }
                     }
-                    else => break,
+                    Some(error) = ws_connection.errors.recv() => {
+                        eprintln!("Received error from the stream: {}", error);
+                        break
+                    }
+                    else => break
                 }
             }
         }
-        _ => {}
+        Err(err) => eprintln!("Error when performing handshake: {}", err)
     }
 }
 
