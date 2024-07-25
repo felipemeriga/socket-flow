@@ -1,13 +1,11 @@
 use std::sync::Arc;
 use crate::connection::WSConnection;
 use crate::read::ReadStream;
-use crate::error::StreamError;
+use crate::error::{StreamError, HandshakeError};
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
 use bytes::BytesMut;
 use sha1::{Digest, Sha1};
-use thiserror::Error;
-use tokio::io;
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::Mutex;
@@ -23,18 +21,6 @@ const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Upgrade: websocket\r\n\
         Sec-WebSocket-Accept: {}\r\n\
         \r\n";
-
-#[derive(Error, Debug)]
-pub enum HandshakeError {
-    #[error("Couldn't find Sec-WebSocket-Key header in the request")]
-    NoSecWebsocketKey,
-
-    #[error("IO Error happened: {source}")]
-    IOError {
-        #[from]
-        source: io::Error,
-    },
-}
 pub type Result = std::result::Result<WSConnection, HandshakeError>;
 
 // Using Send trait because we are going to run the process to read frames from the socket concurrently
