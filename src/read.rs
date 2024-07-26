@@ -11,12 +11,10 @@ pub struct ReadStream<R: AsyncReadExt + Unpin> {
     pub read: R,
     fragmented_message: Option<Vec<u8>>,
     read_tx: UnboundedSender<Vec<u8>>,
-    internal_tx: UnboundedSender<Frame>
+    internal_tx: UnboundedSender<Frame>,
 }
 
 impl<R: AsyncReadExt + Unpin> ReadStream<R> {
-
-
     pub fn new(read: R, read_tx: UnboundedSender<Vec<u8>>, internal_tx: UnboundedSender<Frame>) -> Self {
         let fragmented_message = Some(Vec::new());
         Self { read, fragmented_message, read_tx, internal_tx }
@@ -56,17 +54,11 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                             println!("Received binary data of length: {}", frame.payload.len());
                         }
                         OpCode::Close => {
-                            if let Err(e) = self.send_close_frame().await {
-                                eprintln!("Failed to send Close Frame: {}", e);
-                                Err(e)?
-                            }
+                            self.send_close_frame().await?;
                             break;
                         }
                         OpCode::Ping => {
-                            if let Err(e) = self.send_pong_frame(frame.payload).await {
-                                eprintln!("Failed to send Pong Frame: {}", e);
-                                Err(e)?
-                            }
+                            self.send_pong_frame(frame.payload).await?
                         }
                         OpCode::Pong => {
                             // handle Pong here or just absorb and do nothing
@@ -94,14 +86,14 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         let final_fragment = (header[0] & 0b10000000) != 0;
         // The opcode is the last 4 bits of the first byte in a websockets frame, here we are doing a bitwise AND operation & 0b00001111
         // to get the last 4 bits of the first byte
-        let opcode = OpCode::from(header[0] & 0b00001111);
+        let opcode = OpCode::from(header[0] & 0b00001111)?;
 
         // As a rule in websockets protocol, if your opcode is a control opcode(ping,pong,close), your message can't be fragmented(split between multiple frames)
         if !final_fragment && opcode.is_control() {
-            return Err(Error::new(
+            Err(Error::new(
                 ErrorKind::InvalidInput,
                 "Control frames must not be fragmented",
-            ));
+            ))?;
         }
 
         // According to the websocket protocol specification, the first bit of the second byte of each frame is the "Mask bit"
@@ -124,7 +116,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         }
 
         if length > MAX_PAYLOAD_SIZE {
-            return Err(Error::new(ErrorKind::InvalidData, "Payload too large"));
+            Err(Error::new(ErrorKind::InvalidData, "Payload too large"))?;
         }
 
         let mask = if masked {
@@ -146,12 +138,12 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         let read_result = timeout(Duration::from_secs(5), self.read.read_exact(&mut payload)).await;
         match read_result {
             Ok(Ok(_)) => {}              // Continue processing the payload
-            Ok(Err(e)) => return Err(e), // An error occurred while reading
+            Ok(Err(e)) => Err(e)?, // An error occurred while reading
             Err(_e) => {
-                return Err(Error::new(
+                Err(Error::new(
                     io::ErrorKind::TimedOut,
                     "Timed out reading from socket",
-                ))
+                ))?
             } // Reading from the socket timed out
         }
 

@@ -1,10 +1,12 @@
 use std::sync::Arc;
+use base64::encode;
 use crate::connection::WSConnection;
 use crate::read::ReadStream;
 use crate::error::{StreamError, HandshakeError};
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
 use bytes::BytesMut;
+use rand::{random, Rng};
 use sha1::{Digest, Sha1};
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc::unbounded_channel;
@@ -20,6 +22,14 @@ const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Connection: Upgrade\r\n\
         Upgrade: websocket\r\n\
         Sec-WebSocket-Accept: {}\r\n\
+        \r\n";
+
+const HTTP_HANDSHAKE_REQUEST: &str = "GET / HTTP/1.1\r\n\
+        Host: {}\r\n\
+        Connection: Upgrade\r\n\
+        Upgrade: websocket\r\n\
+        Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+        Sec-WebSocket-Version: 13\r\n\
         \r\n";
 pub type Result = std::result::Result<WSConnection, HandshakeError>;
 
@@ -149,4 +159,9 @@ fn generate_websocket_accept_value(key: String) -> String {
     sha1.update(key.as_bytes());
     sha1.update(UUID.as_bytes());
     BASE64_STANDARD.encode(sha1.finalize())
+}
+
+fn generate_websocket_key() -> String {
+    let random_bytes: [u8; 16] = random();
+    BASE64_STANDARD.encode(random_bytes)
 }
