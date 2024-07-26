@@ -1,32 +1,11 @@
 use crate::frame::{Frame, OpCode, MAX_PAYLOAD_SIZE};
 use std::io;
 use std::io::{Error, ErrorKind};
-use thiserror::Error;
 use tokio::io::{AsyncReadExt};
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{UnboundedSender};
 use tokio::time::{timeout, Duration};
-
-#[derive(Error, Debug)]
-pub enum StreamError {
-    #[error("{source}")]
-    IOError {
-        #[from]
-        source: io::Error,
-    },
-
-    #[error("{source}")]
-    BroadcastSendError {
-        #[from]
-        source: SendError<Vec<u8>>,
-    },
-
-    #[error("{source}")]
-    InternalSendError {
-        #[from]
-        source: SendError<Frame>,
-    },
-}
+use crate::error::StreamError;
 
 pub struct ReadStream<R: AsyncReadExt + Unpin> {
     pub read: R,
@@ -43,8 +22,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         Self { read, fragmented_message, read_tx, internal_tx }
     }
 
-    // TODO: Add more descriptive errors for each Opcode handling, using thiserror
-    // of the own package printing the error like:  eprintln!("Error while reading frame: {}", e);
+    //
     pub async fn poll_messages(&mut self) -> Result<(), StreamError> {
         // Now in websocket mode, read frames
         loop {
@@ -198,18 +176,6 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         })
     }
 
-    // pub async fn write_frame(&mut self, frame: Frame) -> io::Result<()> {
-    //     let first_byte = (frame.final_fragment as u8) << 7 | frame.opcode.as_u8();
-    //     let initial_payload_len = frame.payload.len() as u8;
-    //
-    //     self.write
-    //         .write_all(&[first_byte, initial_payload_len])
-    //         .await?;
-    //     self.write.write_all(&frame.payload).await?;
-    //
-    //     Ok(())
-    // }
-
     pub async fn send_close_frame(&mut self) -> Result<(), SendError<Frame>> {
         return self.internal_tx.send(Frame::new(true, OpCode::Close, Vec::new()));
     }
@@ -219,6 +185,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
 // holds the ownership to BufReader, WriteHalf, read_tx and write_tx. If the created struct goes out
 // of scopes, it will be dropped automatically, also the another dependencies to the unbounded channels
 // will be closed.
+// Therefore, if these attributes are dropped, and channels will be closed, and the TCP connection, terminated
 impl<R: AsyncReadExt + Unpin> Drop for ReadStream<R> {
     fn drop(&mut self) {
         // No need to manually drop parts of our struct, Rust will take care of it automatically.

@@ -1,13 +1,14 @@
+use std::sync::Arc;
 use crate::connection::WSConnection;
-use crate::read::{ReadStream};
+use crate::read::ReadStream;
+use crate::error::{StreamError, HandshakeError};
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
 use bytes::BytesMut;
 use sha1::{Digest, Sha1};
-use thiserror::Error;
-use tokio::io;
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use crate::frame::Frame;
 use crate::write::WriteStream;
@@ -20,18 +21,6 @@ const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Upgrade: websocket\r\n\
         Sec-WebSocket-Accept: {}\r\n\
         \r\n";
-
-#[derive(Error, Debug)]
-pub enum HandshakeError {
-    #[error("Couldn't find Sec-WebSocket-Key header in the request")]
-    NoSecWebsocketKey,
-
-    #[error("IO Error happened: {source}")]
-    IOError {
-        #[from]
-        source: io::Error,
-    },
-}
 pub type Result = std::result::Result<WSConnection, HandshakeError>;
 
 // Using Send trait because we are going to run the process to read frames from the socket concurrently
@@ -60,30 +49,43 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
     let (write_tx, write_rx) = unbounded_channel();
     let (read_tx, read_rx) = unbounded_channel();
 
+    // These internal channels are used to communicate between write and read stream
     let (internal_tx, internal_rx) = unbounded_channel::<Frame>();
 
+    // We are separating the stream in read and write, because handling them in the same struct, would need us to
+    // wrap some references with Arc<mutex>, and for the sake of a clean syntax, we selected to split it
     let mut read_stream = ReadStream::new(buf_reader, read_tx, internal_tx);
     let mut write_stream = WriteStream::new(writer, write_rx, internal_rx);
 
-    let ws_connection = WSConnection::new(read_rx, write_tx);
+    let (error_tx, error_rx) = unbounded_channel::<StreamError>();
+    let error_tx = Arc::new(Mutex::new(error_tx));
 
+    let ws_connection = WSConnection::new(read_rx, write_tx, error_rx);
+
+
+    let error_tx_r = error_tx.clone();
     // We are spawning poll_messages which is the method for reading the frames from the socket
     // we need to do it concurrently, because we need this method running, while the end-user can have
     // a channel returned, for receiving and sending messages
     // Since ReadHalf and WriteHalf implements Send and Sync, it's ok to send them over spawn
     // Additionally, since our BufReader doesn't change, we only call read methods from it, there is no
     // need to wrap it in an Arc<Mutex>, also because poll_messages read frames sequentially.
+    // Also, since this is the only task that holds the ownership of BufReader, if some IO error happens,
+    // poll_messages will return, and since BufReader is only inside the scope of the function, it will be dropped
+    // dropping the WriteHalf, hence, the TCP connection
     tokio::spawn(async move {
         match read_stream.poll_messages().await {
-            Err(err) => {
-                eprintln!("Received error from stream: {}", err)
-            }
+            Err(err) => error_tx_r.lock().await.send(err).unwrap(),
             _ => {}
         }
     });
 
+    let error_tx_w = error_tx.clone();
     tokio::spawn(async move {
-        write_stream.run().await;
+        match write_stream.run().await {
+            Err(err) => error_tx_w.lock().await.send(err).unwrap(),
+            _ => {}
+        };
     });
 
     Ok(ws_connection)
