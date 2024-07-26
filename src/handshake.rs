@@ -1,3 +1,4 @@
+use std::io::Error;
 use std::sync::Arc;
 use base64::encode;
 use crate::connection::WSConnection;
@@ -9,6 +10,7 @@ use bytes::BytesMut;
 use rand::{random, Rng};
 use sha1::{Digest, Sha1};
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
@@ -17,6 +19,7 @@ use crate::write::WriteStream;
 
 const SEC_WEBSOCKETS_KEY: &str = "Sec-WebSocket-Key:";
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
 
 const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Connection: Upgrade\r\n\
@@ -25,11 +28,12 @@ const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         \r\n";
 
 const HTTP_HANDSHAKE_REQUEST: &str = "GET / HTTP/1.1\r\n\
-        Host: {}\r\n\
+        Host: {host}\r\n\
         Connection: Upgrade\r\n\
         Upgrade: websocket\r\n\
-        Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+        Sec-WebSocket-Key: {key}\r\n\
         Sec-WebSocket-Version: 13\r\n\
+        Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\
         \r\n";
 pub type Result = std::result::Result<WSConnection, HandshakeError>;
 
@@ -99,6 +103,46 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
     });
 
     Ok(ws_connection)
+}
+
+
+pub async fn perform_client_handshake(stream: TcpStream) -> std::result::Result<(), HandshakeError> {
+    let client_websocket_key = generate_websocket_key();
+    let request = HTTP_HANDSHAKE_REQUEST.replace("{key}", &client_websocket_key).replace("{host}", &stream.local_addr().unwrap().to_string());
+
+    let (reader, mut writer) = split(stream);
+    let mut buf_reader = BufReader::new(reader);
+
+    writer.write_all(request.as_bytes()).await?;
+
+    // Create a buffer for the server's response, since most of the Websocket won't send a big payload
+    // for the handshake response, defining this size of Vector would be enough, and also will put a limit
+    // to bigger payloads
+    let mut buffer: Vec<u8> = vec![0; 1024];
+
+
+    // Read the server's response
+    buf_reader.read(&mut buffer).await?;
+
+    // Convert the server's response to a string
+    let response = String::from_utf8(buffer)?;
+
+    // Verify that the server agreed to upgrade the connection
+    if !response.contains(SWITCHING_PROTOCOLS) {
+        return Err(HandshakeError::NoUpgrade);
+    }
+
+    // Generate the server expected accept key using UUID, and checking if it's present in the response
+    let expected_accept_value = generate_websocket_accept_value(client_websocket_key);
+    if !response.contains(&expected_accept_value) {
+        return Err(HandshakeError::InvalidAcceptKey);
+    }
+
+    loop {
+
+    }
+
+    Ok(())
 }
 
 // Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the

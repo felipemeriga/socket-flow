@@ -1,4 +1,5 @@
 use std::io;
+use std::string::FromUtf8Error;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use crate::frame::Frame;
@@ -13,6 +14,18 @@ pub enum HandshakeError {
         #[from]
         source: io::Error,
     },
+
+    #[error("{source}")]
+    FromUtf8Error {
+        #[from]
+        source: FromUtf8Error
+    },
+
+    #[error("Server didn't upgrade the connection")]
+    NoUpgrade,
+
+    #[error("Sever didn't send a valid Sec-WebSocket-Accept key")]
+    InvalidAcceptKey
 }
 
 #[derive(Error, Debug)]
@@ -22,9 +35,6 @@ pub enum StreamError {
         #[from]
         source: io::Error,
     },
-
-    #[error("test")]
-    TestError,
 
     #[error("{source}")]
     BroadcastSendError {
