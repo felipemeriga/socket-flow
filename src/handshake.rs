@@ -56,6 +56,10 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
         None => Err(HandshakeError::NoSecWebsocketKey)?,
     }
 
+    second_stage_handshake(buf_reader, writer).await
+}
+
+async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: AsyncWriteExt + Send + Unpin + 'static>(buf_reader: R, writer: W) -> Result {
     // We are using unbounded async channels to communicate the frames received from the client
     // and another channel to send messages from server to client
     let (write_tx, write_rx) = unbounded_channel();
@@ -137,38 +141,7 @@ pub async fn perform_client_handshake(stream: TcpStream) -> Result {
         return Err(HandshakeError::InvalidAcceptKey);
     }
 
-    let (write_tx, write_rx) = unbounded_channel();
-    let (read_tx, read_rx) = unbounded_channel();
-
-    // These internal channels are used to communicate between write and read stream
-    let (internal_tx, internal_rx) = unbounded_channel::<Frame>();
-
-    // We are separating the stream in read and write, because handling them in the same struct, would need us to
-    // wrap some references with Arc<mutex>, and for the sake of a clean syntax, we selected to split it
-    let mut read_stream = ReadStream::new(buf_reader, read_tx, internal_tx);
-    let mut write_stream = WriteStream::new(writer, write_rx, internal_rx);
-
-    let (error_tx, error_rx) = unbounded_channel::<StreamError>();
-    let error_tx = Arc::new(Mutex::new(error_tx));
-
-    let ws_connection = WSConnection::new(read_rx, write_tx, error_rx);
-
-    let error_tx_r = error_tx.clone();
-
-    tokio::spawn(async move {
-        if let Err(err) = read_stream.poll_messages().await {
-            error_tx_r.lock().await.send(err).unwrap()
-        }
-    });
-
-    let error_tx_w = error_tx.clone();
-    tokio::spawn(async move {
-        if let Err(err) = write_stream.run().await {
-            error_tx_w.lock().await.send(err).unwrap()
-        }
-    });
-
-    Ok(ws_connection)
+    second_stage_handshake(buf_reader, writer).await
 }
 
 // Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the
