@@ -86,18 +86,16 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
     // poll_messages will return, and since BufReader is only inside the scope of the function, it will be dropped
     // dropping the WriteHalf, hence, the TCP connection
     tokio::spawn(async move {
-        match read_stream.poll_messages().await {
-            Err(err) => error_tx_r.lock().await.send(err).unwrap(),
-            _ => {}
+        if let Err(err) = read_stream.poll_messages().await {
+            error_tx_r.lock().await.send(err).unwrap()
         }
     });
 
     let error_tx_w = error_tx.clone();
     tokio::spawn(async move {
-        match write_stream.run().await {
-            Err(err) => error_tx_w.lock().await.send(err).unwrap(),
-            _ => {}
-        };
+        if let Err(err) = write_stream.run().await {
+            error_tx_w.lock().await.send(err).unwrap()
+        }
     });
 
     Ok(ws_connection)
@@ -120,7 +118,10 @@ pub async fn perform_client_handshake(stream: TcpStream) -> Result {
 
 
     // Read the server's response
-    buf_reader.read(&mut buffer).await?;
+    let number_read = buf_reader.read(&mut buffer).await?;
+
+    // Keep only the section of the buffer that was filled.
+    buffer.truncate(number_read);
 
     // Convert the server's response to a string
     let response = String::from_utf8(buffer)?;
@@ -155,18 +156,16 @@ pub async fn perform_client_handshake(stream: TcpStream) -> Result {
     let error_tx_r = error_tx.clone();
 
     tokio::spawn(async move {
-        match read_stream.poll_messages().await {
-            Err(err) => error_tx_r.lock().await.send(err).unwrap(),
-            _ => {}
+        if let Err(err) = read_stream.poll_messages().await {
+            error_tx_r.lock().await.send(err).unwrap()
         }
     });
 
     let error_tx_w = error_tx.clone();
     tokio::spawn(async move {
-        match write_stream.run().await {
-            Err(err) => error_tx_w.lock().await.send(err).unwrap(),
-            _ => {}
-        };
+        if let Err(err) = write_stream.run().await {
+            error_tx_w.lock().await.send(err).unwrap()
+        }
     });
 
     Ok(ws_connection)
@@ -200,17 +199,10 @@ async fn header_read<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Option<Stri
         }
     }
 
-    match websocket_header {
-        Some(header) => {
-            let key_value = parse_websocket_key(header);
-            match key_value {
-                Some(key) => {
-                    websocket_accept = Some(generate_websocket_accept_value(key));
-                }
-                _ => {}
-            }
+    if let Some(header) = websocket_header {
+        if let Some(key) = parse_websocket_key(header) {
+            websocket_accept = Some(generate_websocket_accept_value(key));
         }
-        _ => {}
     }
 
     websocket_accept
@@ -219,7 +211,9 @@ async fn header_read<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Option<Stri
 fn parse_websocket_key(header: String) -> Option<String> {
     for line in header.lines() {
         if line.starts_with(SEC_WEBSOCKETS_KEY) {
-            return line[18..].split_whitespace().next().map(ToOwned::to_owned);
+            if let Some(stripped) = line.strip_prefix(SEC_WEBSOCKETS_KEY) {
+                return stripped.split_whitespace().next().map(ToOwned::to_owned);
+            }
         }
     }
     None

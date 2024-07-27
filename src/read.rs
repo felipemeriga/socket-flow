@@ -74,7 +74,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
 
     async fn send_pong_frame(&mut self, payload: Vec<u8>) -> Result<(), SendError<Frame>> {
         let pong_frame = Frame::new(true, OpCode::Pong, payload);
-        return self.internal_tx.send(pong_frame);
+        self.internal_tx.send(pong_frame)
     }
 
     pub async fn read_frame(&mut self) -> Result<Frame, Error> {
@@ -169,7 +169,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
     }
 
     pub async fn send_close_frame(&mut self) -> Result<(), SendError<Frame>> {
-        return self.internal_tx.send(Frame::new(true, OpCode::Close, Vec::new()));
+        self.internal_tx.send(Frame::new(true, OpCode::Close, Vec::new()))
     }
 }
 
