@@ -1,15 +1,13 @@
-use std::io::Error;
 use std::sync::Arc;
-use base64::encode;
 use crate::connection::WSConnection;
 use crate::read::ReadStream;
 use crate::error::{StreamError, HandshakeError};
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
 use bytes::BytesMut;
-use rand::{random, Rng};
+use rand::{random};
 use sha1::{Digest, Sha1};
-use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
+use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::Mutex;
