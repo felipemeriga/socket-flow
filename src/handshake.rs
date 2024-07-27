@@ -9,7 +9,7 @@ use base64::prelude::*;
 use bytes::BytesMut;
 use rand::{random, Rng};
 use sha1::{Digest, Sha1};
-use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::Mutex;
@@ -106,7 +106,7 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
 }
 
 
-pub async fn perform_client_handshake(stream: TcpStream) -> std::result::Result<(), HandshakeError> {
+pub async fn perform_client_handshake(stream: TcpStream) -> Result {
     let client_websocket_key = generate_websocket_key();
     let request = HTTP_HANDSHAKE_REQUEST.replace("{key}", &client_websocket_key).replace("{host}", &stream.local_addr().unwrap().to_string());
 
@@ -138,11 +138,40 @@ pub async fn perform_client_handshake(stream: TcpStream) -> std::result::Result<
         return Err(HandshakeError::InvalidAcceptKey);
     }
 
-    loop {
+    let (write_tx, write_rx) = unbounded_channel();
+    let (read_tx, read_rx) = unbounded_channel();
 
-    }
+    // These internal channels are used to communicate between write and read stream
+    let (internal_tx, internal_rx) = unbounded_channel::<Frame>();
 
-    Ok(())
+    // We are separating the stream in read and write, because handling them in the same struct, would need us to
+    // wrap some references with Arc<mutex>, and for the sake of a clean syntax, we selected to split it
+    let mut read_stream = ReadStream::new(buf_reader, read_tx, internal_tx);
+    let mut write_stream = WriteStream::new(writer, write_rx, internal_rx);
+
+    let (error_tx, error_rx) = unbounded_channel::<StreamError>();
+    let error_tx = Arc::new(Mutex::new(error_tx));
+
+    let ws_connection = WSConnection::new(read_rx, write_tx, error_rx);
+
+    let error_tx_r = error_tx.clone();
+
+    tokio::spawn(async move {
+        match read_stream.poll_messages().await {
+            Err(err) => error_tx_r.lock().await.send(err).unwrap(),
+            _ => {}
+        }
+    });
+
+    let error_tx_w = error_tx.clone();
+    tokio::spawn(async move {
+        match write_stream.run().await {
+            Err(err) => error_tx_w.lock().await.send(err).unwrap(),
+            _ => {}
+        };
+    });
+
+    Ok(ws_connection)
 }
 
 // Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the
