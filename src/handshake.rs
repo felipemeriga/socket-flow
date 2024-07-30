@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::connection::WSConnection;
-use crate::read::ReadStream;
+use crate::read::{ReadStream, StreamKind};
 use crate::error::{StreamError, HandshakeError};
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
@@ -9,7 +9,7 @@ use rand::{random};
 use sha1::{Digest, Sha1};
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::mpsc::{channel};
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use crate::frame::Frame;
@@ -56,30 +56,33 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
         None => Err(HandshakeError::NoSecWebsocketKey)?,
     }
 
-    second_stage_handshake(buf_reader, writer).await
+    second_stage_handshake(StreamKind::Server, buf_reader, writer).await
 }
 
-async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: AsyncWriteExt + Send + Unpin + 'static>(buf_reader: R, writer: W) -> Result {
+async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: AsyncWriteExt + Send + Unpin + 'static>(kind: StreamKind, buf_reader: R, writer: W) -> Result {
     // We are using unbounded async channels to communicate the frames received from the client
     // and another channel to send messages from server to client
-    let (write_tx, write_rx) = unbounded_channel();
-    let (read_tx, read_rx) = unbounded_channel();
+    // TODO - Check if 20 is a good number for Buffer size, remembering that channel is async, so if it's full
+    // all the callers that are trying to add new data, will be blocked until we have free space (off course, using await in the method)
+    let (write_tx, write_rx) = channel::<Frame>(20);
+
+    let (read_tx, read_rx) = channel::<std::result::Result<Vec<u8>, StreamError>>(20);
+    let read_tx = Arc::new(Mutex::new(read_tx));
 
     // These internal channels are used to communicate between write and read stream
-    let (internal_tx, internal_rx) = unbounded_channel::<Frame>();
+    let (internal_tx, internal_rx) = channel::<Frame>(20);
+    let (close_tx, close_rx) = channel::<bool>(1);
 
+    let read_tx_stream = read_tx.clone();
     // We are separating the stream in read and write, because handling them in the same struct, would need us to
     // wrap some references with Arc<mutex>, and for the sake of a clean syntax, we selected to split it
-    let mut read_stream = ReadStream::new(buf_reader, read_tx, internal_tx);
+    let mut read_stream = ReadStream::new(kind, buf_reader, read_tx_stream, internal_tx, close_tx);
     let mut write_stream = WriteStream::new(writer, write_rx, internal_rx);
 
-    let (error_tx, error_rx) = unbounded_channel::<StreamError>();
-    let error_tx = Arc::new(Mutex::new(error_tx));
-
-    let ws_connection = WSConnection::new(read_rx, write_tx, error_rx);
+    let ws_connection = WSConnection::new(read_rx, write_tx, close_rx);
 
 
-    let error_tx_r = error_tx.clone();
+    let read_tx_r = read_tx.clone();
     // We are spawning poll_messages which is the method for reading the frames from the socket
     // we need to do it concurrently, because we need this method running, while the end-user can have
     // a channel returned, for receiving and sending messages
@@ -91,14 +94,14 @@ async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: Asy
     // dropping the WriteHalf, hence, the TCP connection
     tokio::spawn(async move {
         if let Err(err) = read_stream.poll_messages().await {
-            error_tx_r.lock().await.send(err).unwrap()
+            read_tx_r.lock().await.send(Err(err)).await.unwrap()
         }
     });
 
-    let error_tx_w = error_tx.clone();
+    let read_tx_w = read_tx.clone();
     tokio::spawn(async move {
         if let Err(err) = write_stream.run().await {
-            error_tx_w.lock().await.send(err).unwrap()
+            read_tx_w.lock().await.send(Err(err)).await.unwrap()
         }
     });
 
@@ -141,7 +144,7 @@ pub async fn perform_client_handshake(stream: TcpStream) -> Result {
         return Err(HandshakeError::InvalidAcceptKey);
     }
 
-    second_stage_handshake(buf_reader, writer).await
+    second_stage_handshake(StreamKind::Client, buf_reader, writer).await
 }
 
 // Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the

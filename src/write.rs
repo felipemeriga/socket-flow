@@ -1,17 +1,17 @@
 use std::io;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{Receiver};
 use crate::error::StreamError;
 use crate::frame::{Frame, OpCode};
 
 pub struct WriteStream<W: AsyncWriteExt + Unpin> {
     pub write: W,
-    broadcast_rx: UnboundedReceiver<Vec<u8>>,
-    internal_rx: UnboundedReceiver<Frame>,
+    broadcast_rx: Receiver<Frame>,
+    internal_rx: Receiver<Frame>,
 }
 
 impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
-    pub fn new(write: W, broadcast_rx: UnboundedReceiver<Vec<u8>>, internal_rx: UnboundedReceiver<Frame>) -> Self {
+    pub fn new(write: W, broadcast_rx: Receiver<Frame>, internal_rx: Receiver<Frame>) -> Self {
         Self { write, broadcast_rx, internal_rx }
     }
 
@@ -19,12 +19,14 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
         loop {
             tokio::select! {
                 Some(data) = self.broadcast_rx.recv() => {
-                    let frame = Frame {
-                        final_fragment: true,
-                        opcode: OpCode::Text,
-                        payload: data,
-                    };
-                    self.write_frame(frame).await?
+                    let data_clone = data.clone();
+                    self.write_frame(data).await?;
+                    match data_clone.opcode {
+                        OpCode::Close =>{
+                            println!("Sending close frame");
+                            break
+                        },
+                    _ => {}}
                 }
                 Some(frame) = self.internal_rx.recv() => {
                    self.write_frame(frame).await?

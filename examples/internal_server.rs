@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use log::*;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
+use simple_websocket::frame::{Frame, OpCode};
 use simple_websocket::handshake::perform_handshake;
 
 async fn handle_connection(_: SocketAddr, stream: TcpStream) {
@@ -9,22 +10,27 @@ async fn handle_connection(_: SocketAddr, stream: TcpStream) {
         Ok(mut ws_connection) => {
             loop {
                 select! {
-                    Some(message) = ws_connection.read.recv() => {
-                        if ws_connection.write.send(message).is_err() {
-                            eprintln!("Failed to send message");
-                            break;
+                    Some(result) = ws_connection.read.recv() => {
+                        match result {
+                            Ok(message) => {
+                                if ws_connection.write.send(Frame::new(true, OpCode::Text, message)).await.is_err() {
+                                    eprintln!("Failed to send message");
+                                    break;
+                                }
+                            }
+                            Err(err) => {
+                                eprintln!("Received error from the stream: {}", err);
+                                break;
+                            }
                         }
                     }
-                    Some(error) = ws_connection.errors.recv() => {
-                        eprintln!("Received error from the stream: {}", error);
-                        break
-                    }
-                    else => break
+                    else => println!("Connection dropped")
                 }
             }
         }
         Err(err) => eprintln!("Error when performing handshake: {}", err)
     }
+    println!("closed connection");
 }
 
 

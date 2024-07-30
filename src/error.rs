@@ -2,7 +2,23 @@ use std::io;
 use std::string::FromUtf8Error;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
+use tokio::time::error::Elapsed;
 use crate::frame::Frame;
+
+#[derive(Error, Debug)]
+pub enum CloseError {
+    #[error("{source}")]
+    SendError {
+        #[from]
+        source: SendError<Frame>,
+    },
+
+    #[error("{source}")]
+    Timeout {
+        #[from]
+        source: Elapsed
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum HandshakeError {
@@ -36,15 +52,18 @@ pub enum StreamError {
         source: io::Error,
     },
 
-    #[error("{source}")]
-    BroadcastSendError {
-        #[from]
-        source: SendError<Vec<u8>>,
-    },
+    #[error("channel communication error")]
+    CommunicationError,
 
     #[error("{source}")]
     InternalSendError {
         #[from]
         source: SendError<Frame>,
+    },
+
+    #[error("{source}")]
+    CloseChannelError {
+        #[from]
+        source: SendError<bool>,
     },
 }
