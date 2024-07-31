@@ -60,7 +60,7 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
 }
 
 async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: AsyncWriteExt + Send + Unpin + 'static>(kind: StreamKind, buf_reader: R, writer: W) -> Result {
-    // We are using unbounded async channels to communicate the frames received from the client
+    // We are using tokio async channels to communicate the frames received from the client
     // and another channel to send messages from server to client
     // TODO - Check if 20 is a good number for Buffer size, remembering that channel is async, so if it's full
     // all the callers that are trying to add new data, will be blocked until we have free space (off course, using await in the method)

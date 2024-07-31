@@ -193,9 +193,9 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
     }
 }
 
-// The Stream contains the split socket and unbounded channels, since Stream is the only one that
+// The Stream contains the split socket and mpsc channels, since Stream is the only one that
 // holds the ownership to BufReader, WriteHalf, read_tx and write_tx. If the created struct goes out
-// of scopes, it will be dropped automatically, also the another dependencies to the unbounded channels
+// of scopes, it will be dropped automatically, also the another dependencies to the channels
 // will be closed.
 // Therefore, if these attributes are dropped, and channels will be closed, and the TCP connection, terminated
 impl<R: AsyncReadExt + Unpin> Drop for ReadStream<R> {
