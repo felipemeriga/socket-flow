@@ -3,7 +3,7 @@
 
 NEXT STEPS
 
-- handle case of big json payload
+- handle case of big json payload, it's throwing errors for texts that have more than 8 lines, if you put the json less than 8 lines, even if it's bigger, it still works
 - remove unbounded channel comments
 - implement methods for close and send messages inside ws_connection, so the end user can't do mistakes with the exported channel,
   for this, we could use a channel that will receive the close success from server, and the close method from ws_connection will be waiting
