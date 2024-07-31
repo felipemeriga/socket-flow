@@ -19,7 +19,7 @@ impl WSConnection {
     pub async fn close_connection(&mut self) -> Result<(), CloseError>{
         self.write.send(Frame::new(true, OpCode::Close, Vec::new())).await?;
 
-        match timeout(Duration::from_millis(200), self.close_rx.recv()).await {
+        match timeout(Duration::from_secs(3), self.close_rx.recv()).await {
             Ok(Some(_)) => Ok(()),
             Ok(None) => Ok(()),
             Err(err) => Err(err)?,

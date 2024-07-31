@@ -23,12 +23,8 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
                         Some(data) => {
                             let data_clone = data.clone();
                             self.write_frame(data).await?;
-                            match data_clone.opcode {
-                                OpCode::Close =>{
-                                    println!("Sending close frame");
-                                    break;
-                                },
-                                _ => {}
+                            if data_clone.opcode == OpCode::Close {
+                                 break;
                             }
                         },
                         None => break
