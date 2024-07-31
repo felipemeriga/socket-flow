@@ -24,7 +24,10 @@ async fn handle_connection(_: SocketAddr, stream: TcpStream) {
                             }
                         }
                     }
-                    else => println!("Connection dropped")
+                    else => {
+                        println!("connection dropped");
+                        break;
+                    }
                 }
             }
         }

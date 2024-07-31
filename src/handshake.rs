@@ -92,17 +92,20 @@ async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: Asy
     // Also, since this is the only task that holds the ownership of BufReader, if some IO error happens,
     // poll_messages will return, and since BufReader is only inside the scope of the function, it will be dropped
     // dropping the WriteHalf, hence, the TCP connection
+
     tokio::spawn(async move {
         if let Err(err) = read_stream.poll_messages().await {
-            read_tx_r.lock().await.send(Err(err)).await.unwrap()
+            read_tx_r.lock().await.send(Err(err)).await.unwrap();
         }
     });
 
     let read_tx_w = read_tx.clone();
     tokio::spawn(async move {
         if let Err(err) = write_stream.run().await {
+            println!("jusk");
             read_tx_w.lock().await.send(Err(err)).await.unwrap()
         }
+        drop(read_tx_w);
     });
 
     Ok(ws_connection)

@@ -15,23 +15,39 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
         Self { write, broadcast_rx, internal_rx }
     }
 
-    pub async fn run(&mut self) -> Result<(), StreamError>{
+    pub async fn run(&mut self) -> Result<(), StreamError> {
         loop {
             tokio::select! {
-                Some(data) = self.broadcast_rx.recv() => {
-                    let data_clone = data.clone();
-                    self.write_frame(data).await?;
-                    match data_clone.opcode {
-                        OpCode::Close =>{
-                            println!("Sending close frame");
-                            break
+                broadcast_data = self.broadcast_rx.recv() => {
+                    match broadcast_data {
+                        Some(data) => {
+                            let data_clone = data.clone();
+                            self.write_frame(data).await?;
+                            match data_clone.opcode {
+                                OpCode::Close =>{
+                                    println!("Sending close frame");
+                                    break;
+                                },
+                                _ => {}
+                            }
                         },
-                    _ => {}}
-                }
-                Some(frame) = self.internal_rx.recv() => {
-                   self.write_frame(frame).await?
-                }
-                else => break,
+                        None => {
+                            println!("broadcast_rx channel closed!");
+                            break;
+                        },
+                    }
+                },
+                internal_data = self.internal_rx.recv() => {
+                    match internal_data {
+                        Some(frame) => {
+                            self.write_frame(frame).await?
+                        },
+                        None => {
+                            println!("internal_rx channel closed!");
+                            break;
+                        },
+                    }
+                },
             }
         }
         Ok(())
