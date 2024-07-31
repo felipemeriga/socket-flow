@@ -4,7 +4,6 @@ use simple_websocket::handshake::perform_client_handshake;
 use tokio::time::{Duration, interval};
 use rand::{thread_rng, Rng};
 use rand::distr::Alphanumeric;
-use simple_websocket::frame::{Frame, OpCode};
 
 async fn handle_connection(stream: TcpStream) {
     match perform_client_handshake(stream).await {
@@ -37,7 +36,8 @@ async fn handle_connection(stream: TcpStream) {
                     _ = ticker.tick() => {
                         let random_string = generate_random_string();
                         let binary_data = Vec::from(random_string);
-                        if ws_connection.write.send(Frame::new(true, OpCode::Text, binary_data)).await.is_err() {
+
+                        if ws_connection.send_data(binary_data).await.is_err() {
                             eprintln!("Failed to send message");
                             break;
                         }

@@ -5,10 +5,11 @@ use tokio::time::timeout;
 use crate::error::{CloseError, StreamError};
 use crate::frame::{Frame, OpCode};
 
+const CLOSE_TIMEOUT: u64 = 5;
 pub struct WSConnection {
     pub read: Receiver<Result<Vec<u8>, StreamError>>,
-    pub write: Sender<Frame>,
-    close_rx: Receiver<bool>
+    write: Sender<Frame>,
+    close_rx: Receiver<bool>,
 }
 
 impl WSConnection {
@@ -16,18 +17,17 @@ impl WSConnection {
         Self { read, write, close_rx }
     }
 
-    pub async fn close_connection(&mut self) -> Result<(), CloseError>{
+    pub async fn close_connection(&mut self) -> Result<(), CloseError> {
         self.write.send(Frame::new(true, OpCode::Close, Vec::new())).await?;
 
-        match timeout(Duration::from_secs(3), self.close_rx.recv()).await {
-            Ok(Some(_)) => Ok(()),
-            Ok(None) => Ok(()),
+        match timeout(Duration::from_secs(CLOSE_TIMEOUT), self.close_rx.recv()).await {
             Err(err) => Err(err)?,
+            _ => Ok(())
         }
     }
 
     // TODO - Create method for binary
-    pub async fn send_data(&mut self, data: Vec<u8>) -> Result<(), SendError<Frame>>{
+    pub async fn send_data(&mut self, data: Vec<u8>) -> Result<(), SendError<Frame>> {
         self.write.send(Frame::new(true, OpCode::Text, data)).await
     }
 
