@@ -102,7 +102,6 @@ async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: Asy
     let read_tx_w = read_tx.clone();
     tokio::spawn(async move {
         if let Err(err) = write_stream.run().await {
-            println!("jusk");
             read_tx_w.lock().await.send(Err(err)).await.unwrap()
         }
         drop(read_tx_w);
