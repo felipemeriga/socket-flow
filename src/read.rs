@@ -102,6 +102,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         self.read.read_exact(&mut header).await?;
 
         // The first bit in the first byte in the frame tells us whether the current frame is the final fragment of a message
+        // here we are getting the native binary 0b10000000 and doing a bitwise AND operation
         let final_fragment = (header[0] & 0b10000000) != 0;
         // The opcode is the last 4 bits of the first byte in a websockets frame, here we are doing a bitwise AND operation & 0b00001111
         // to get the last 4 bits of the first byte
