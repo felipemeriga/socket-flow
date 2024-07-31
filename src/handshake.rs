@@ -1,13 +1,15 @@
 use std::sync::Arc;
 use crate::connection::WSConnection;
-use crate::read::ReadStream;
+use crate::read::{ReadStream, StreamKind};
 use crate::error::{StreamError, HandshakeError};
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
 use bytes::BytesMut;
+use rand::{random};
 use sha1::{Digest, Sha1};
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::sync::mpsc::unbounded_channel;
+use tokio::net::TcpStream;
+use tokio::sync::mpsc::{channel};
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use crate::frame::Frame;
@@ -15,11 +17,21 @@ use crate::write::WriteStream;
 
 const SEC_WEBSOCKETS_KEY: &str = "Sec-WebSocket-Key:";
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
 
 const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Connection: Upgrade\r\n\
         Upgrade: websocket\r\n\
         Sec-WebSocket-Accept: {}\r\n\
+        \r\n";
+
+const HTTP_HANDSHAKE_REQUEST: &str = "GET / HTTP/1.1\r\n\
+        Host: {host}\r\n\
+        Connection: Upgrade\r\n\
+        Upgrade: websocket\r\n\
+        Sec-WebSocket-Key: {key}\r\n\
+        Sec-WebSocket-Version: 13\r\n\
+        Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\
         \r\n";
 pub type Result = std::result::Result<WSConnection, HandshakeError>;
 
@@ -44,26 +56,33 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
         None => Err(HandshakeError::NoSecWebsocketKey)?,
     }
 
+    second_stage_handshake(StreamKind::Server, buf_reader, writer).await
+}
+
+async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: AsyncWriteExt + Send + Unpin + 'static>(kind: StreamKind, buf_reader: R, writer: W) -> Result {
     // We are using unbounded async channels to communicate the frames received from the client
     // and another channel to send messages from server to client
-    let (write_tx, write_rx) = unbounded_channel();
-    let (read_tx, read_rx) = unbounded_channel();
+    // TODO - Check if 20 is a good number for Buffer size, remembering that channel is async, so if it's full
+    // all the callers that are trying to add new data, will be blocked until we have free space (off course, using await in the method)
+    let (write_tx, write_rx) = channel::<Frame>(20);
+
+    let (read_tx, read_rx) = channel::<std::result::Result<Vec<u8>, StreamError>>(20);
+    let read_tx = Arc::new(Mutex::new(read_tx));
 
     // These internal channels are used to communicate between write and read stream
-    let (internal_tx, internal_rx) = unbounded_channel::<Frame>();
+    let (internal_tx, internal_rx) = channel::<Frame>(20);
+    let (close_tx, close_rx) = channel::<bool>(1);
 
+    let read_tx_stream = read_tx.clone();
     // We are separating the stream in read and write, because handling them in the same struct, would need us to
     // wrap some references with Arc<mutex>, and for the sake of a clean syntax, we selected to split it
-    let mut read_stream = ReadStream::new(buf_reader, read_tx, internal_tx);
+    let mut read_stream = ReadStream::new(kind, buf_reader, read_tx_stream, internal_tx, close_tx);
     let mut write_stream = WriteStream::new(writer, write_rx, internal_rx);
 
-    let (error_tx, error_rx) = unbounded_channel::<StreamError>();
-    let error_tx = Arc::new(Mutex::new(error_tx));
-
-    let ws_connection = WSConnection::new(read_rx, write_tx, error_rx);
+    let ws_connection = WSConnection::new(read_rx, write_tx, close_rx);
 
 
-    let error_tx_r = error_tx.clone();
+    let read_tx_r = read_tx.clone();
     // We are spawning poll_messages which is the method for reading the frames from the socket
     // we need to do it concurrently, because we need this method running, while the end-user can have
     // a channel returned, for receiving and sending messages
@@ -73,22 +92,62 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
     // Also, since this is the only task that holds the ownership of BufReader, if some IO error happens,
     // poll_messages will return, and since BufReader is only inside the scope of the function, it will be dropped
     // dropping the WriteHalf, hence, the TCP connection
+
     tokio::spawn(async move {
-        match read_stream.poll_messages().await {
-            Err(err) => error_tx_r.lock().await.send(err).unwrap(),
-            _ => {}
+        if let Err(err) = read_stream.poll_messages().await {
+            read_tx_r.lock().await.send(Err(err)).await.unwrap();
         }
     });
 
-    let error_tx_w = error_tx.clone();
+    let read_tx_w = read_tx.clone();
     tokio::spawn(async move {
-        match write_stream.run().await {
-            Err(err) => error_tx_w.lock().await.send(err).unwrap(),
-            _ => {}
-        };
+        if let Err(err) = write_stream.run().await {
+            println!("jusk");
+            read_tx_w.lock().await.send(Err(err)).await.unwrap()
+        }
+        drop(read_tx_w);
     });
 
     Ok(ws_connection)
+}
+
+
+pub async fn perform_client_handshake(stream: TcpStream) -> Result {
+    let client_websocket_key = generate_websocket_key();
+    let request = HTTP_HANDSHAKE_REQUEST.replace("{key}", &client_websocket_key).replace("{host}", &stream.local_addr().unwrap().to_string());
+
+    let (reader, mut writer) = split(stream);
+    let mut buf_reader = BufReader::new(reader);
+
+    writer.write_all(request.as_bytes()).await?;
+
+    // Create a buffer for the server's response, since most of the Websocket won't send a big payload
+    // for the handshake response, defining this size of Vector would be enough, and also will put a limit
+    // to bigger payloads
+    let mut buffer: Vec<u8> = vec![0; 1024];
+
+
+    // Read the server's response
+    let number_read = buf_reader.read(&mut buffer).await?;
+
+    // Keep only the section of the buffer that was filled.
+    buffer.truncate(number_read);
+
+    // Convert the server's response to a string
+    let response = String::from_utf8(buffer)?;
+
+    // Verify that the server agreed to upgrade the connection
+    if !response.contains(SWITCHING_PROTOCOLS) {
+        return Err(HandshakeError::NoUpgrade);
+    }
+
+    // Generate the server expected accept key using UUID, and checking if it's present in the response
+    let expected_accept_value = generate_websocket_accept_value(client_websocket_key);
+    if !response.contains(&expected_accept_value) {
+        return Err(HandshakeError::InvalidAcceptKey);
+    }
+
+    second_stage_handshake(StreamKind::Client, buf_reader, writer).await
 }
 
 // Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the
@@ -119,17 +178,10 @@ async fn header_read<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Option<Stri
         }
     }
 
-    match websocket_header {
-        Some(header) => {
-            let key_value = parse_websocket_key(header);
-            match key_value {
-                Some(key) => {
-                    websocket_accept = Some(generate_websocket_accept_value(key));
-                }
-                _ => {}
-            }
+    if let Some(header) = websocket_header {
+        if let Some(key) = parse_websocket_key(header) {
+            websocket_accept = Some(generate_websocket_accept_value(key));
         }
-        _ => {}
     }
 
     websocket_accept
@@ -138,7 +190,9 @@ async fn header_read<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Option<Stri
 fn parse_websocket_key(header: String) -> Option<String> {
     for line in header.lines() {
         if line.starts_with(SEC_WEBSOCKETS_KEY) {
-            return line[18..].split_whitespace().next().map(ToOwned::to_owned);
+            if let Some(stripped) = line.strip_prefix(SEC_WEBSOCKETS_KEY) {
+                return stripped.split_whitespace().next().map(ToOwned::to_owned);
+            }
         }
     }
     None
@@ -149,4 +203,9 @@ fn generate_websocket_accept_value(key: String) -> String {
     sha1.update(key.as_bytes());
     sha1.update(UUID.as_bytes());
     BASE64_STANDARD.encode(sha1.finalize())
+}
+
+fn generate_websocket_key() -> String {
+    let random_bytes: [u8; 16] = random();
+    BASE64_STANDARD.encode(random_bytes)
 }

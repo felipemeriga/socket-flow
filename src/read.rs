@@ -1,25 +1,32 @@
 use crate::frame::{Frame, OpCode, MAX_PAYLOAD_SIZE};
 use std::io;
 use std::io::{Error, ErrorKind};
+use std::sync::{Arc};
 use tokio::io::{AsyncReadExt};
 use tokio::sync::mpsc::error::SendError;
-use tokio::sync::mpsc::{UnboundedSender};
+use tokio::sync::mpsc::{Sender};
+use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use crate::error::StreamError;
 
+pub enum StreamKind {
+    Client,
+    Server
+}
+
 pub struct ReadStream<R: AsyncReadExt + Unpin> {
+    kind: StreamKind,
     pub read: R,
     fragmented_message: Option<Vec<u8>>,
-    read_tx: UnboundedSender<Vec<u8>>,
-    internal_tx: UnboundedSender<Frame>
+    read_tx: Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>,
+    internal_tx: Sender<Frame>,
+    close_tx: Sender<bool>
 }
 
 impl<R: AsyncReadExt + Unpin> ReadStream<R> {
-
-
-    pub fn new(read: R, read_tx: UnboundedSender<Vec<u8>>, internal_tx: UnboundedSender<Frame>) -> Self {
+    pub fn new(kind: StreamKind, read: R, read_tx: Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>, internal_tx: Sender<Frame>, close_tx: Sender<bool>) -> Self {
         let fragmented_message = Some(Vec::new());
-        Self { read, fragmented_message, read_tx, internal_tx }
+        Self { kind, read, fragmented_message, read_tx, internal_tx, close_tx }
     }
 
     //
@@ -49,24 +56,28 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                             }
                         }
                         OpCode::Text => {
-                            self.read_tx.send(frame.payload)?
+                            self.read_tx.lock().await.send(Ok(frame.payload)).await.map_err(|_| StreamError::CommunicationError)?;
                         }
                         OpCode::Binary => {
-                            // Handle Binary data here. For example, let's just print the length of the data.
-                            println!("Received binary data of length: {}", frame.payload.len());
+                            self.read_tx.lock().await.send(Ok(frame.payload)).await.map_err(|_| StreamError::CommunicationError)?;
                         }
                         OpCode::Close => {
-                            if let Err(e) = self.send_close_frame().await {
-                                eprintln!("Failed to send Close Frame: {}", e);
-                                Err(e)?
+                            // We could use macros for implementing different behaviors for stream kinds
+                            // but this match should solve this, avoid the code complexity, and the extra amount of
+                            // code for a macro
+                            match self.kind {
+                                StreamKind::Server => {
+                                    self.send_close_frame().await?;
+                                    break;
+                                }
+                                StreamKind::Client => {
+                                    self.close_tx.send(true).await?;
+                                    break;
+                                }
                             }
-                            break;
                         }
                         OpCode::Ping => {
-                            if let Err(e) = self.send_pong_frame(frame.payload).await {
-                                eprintln!("Failed to send Pong Frame: {}", e);
-                                Err(e)?
-                            }
+                            self.send_pong_frame(frame.payload).await?
                         }
                         OpCode::Pong => {
                             // handle Pong here or just absorb and do nothing
@@ -82,7 +93,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
 
     async fn send_pong_frame(&mut self, payload: Vec<u8>) -> Result<(), SendError<Frame>> {
         let pong_frame = Frame::new(true, OpCode::Pong, payload);
-        return self.internal_tx.send(pong_frame);
+        self.internal_tx.send(pong_frame).await
     }
 
     pub async fn read_frame(&mut self) -> Result<Frame, Error> {
@@ -94,14 +105,14 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         let final_fragment = (header[0] & 0b10000000) != 0;
         // The opcode is the last 4 bits of the first byte in a websockets frame, here we are doing a bitwise AND operation & 0b00001111
         // to get the last 4 bits of the first byte
-        let opcode = OpCode::from(header[0] & 0b00001111);
+        let opcode = OpCode::from(header[0] & 0b00001111)?;
 
         // As a rule in websockets protocol, if your opcode is a control opcode(ping,pong,close), your message can't be fragmented(split between multiple frames)
         if !final_fragment && opcode.is_control() {
-            return Err(Error::new(
+            Err(Error::new(
                 ErrorKind::InvalidInput,
                 "Control frames must not be fragmented",
-            ));
+            ))?;
         }
 
         // According to the websocket protocol specification, the first bit of the second byte of each frame is the "Mask bit"
@@ -124,7 +135,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         }
 
         if length > MAX_PAYLOAD_SIZE {
-            return Err(Error::new(ErrorKind::InvalidData, "Payload too large"));
+            Err(Error::new(ErrorKind::InvalidData, "Payload too large"))?;
         }
 
         let mask = if masked {
@@ -146,12 +157,12 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         let read_result = timeout(Duration::from_secs(5), self.read.read_exact(&mut payload)).await;
         match read_result {
             Ok(Ok(_)) => {}              // Continue processing the payload
-            Ok(Err(e)) => return Err(e), // An error occurred while reading
+            Ok(Err(e)) => Err(e)?, // An error occurred while reading
             Err(_e) => {
-                return Err(Error::new(
+                Err(Error::new(
                     io::ErrorKind::TimedOut,
                     "Timed out reading from socket",
-                ))
+                ))?
             } // Reading from the socket timed out
         }
 
@@ -177,7 +188,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
     }
 
     pub async fn send_close_frame(&mut self) -> Result<(), SendError<Frame>> {
-        return self.internal_tx.send(Frame::new(true, OpCode::Close, Vec::new()));
+        self.internal_tx.send(Frame::new(true, OpCode::Close, Vec::new())).await
     }
 }
 

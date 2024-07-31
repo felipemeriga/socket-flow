@@ -1,35 +1,43 @@
 use std::io;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{Receiver};
 use crate::error::StreamError;
 use crate::frame::{Frame, OpCode};
 
 pub struct WriteStream<W: AsyncWriteExt + Unpin> {
     pub write: W,
-    broadcast_rx: UnboundedReceiver<Vec<u8>>,
-    internal_rx: UnboundedReceiver<Frame>,
+    broadcast_rx: Receiver<Frame>,
+    internal_rx: Receiver<Frame>,
 }
 
 impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
-    pub fn new(write: W, broadcast_rx: UnboundedReceiver<Vec<u8>>, internal_rx: UnboundedReceiver<Frame>) -> Self {
+    pub fn new(write: W, broadcast_rx: Receiver<Frame>, internal_rx: Receiver<Frame>) -> Self {
         Self { write, broadcast_rx, internal_rx }
     }
 
-    pub async fn run(&mut self) -> Result<(), StreamError>{
+    pub async fn run(&mut self) -> Result<(), StreamError> {
         loop {
             tokio::select! {
-                Some(data) = self.broadcast_rx.recv() => {
-                    let frame = Frame {
-                        final_fragment: true,
-                        opcode: OpCode::Text,
-                        payload: data,
-                    };
-                    self.write_frame(frame).await?
-                }
-                Some(frame) = self.internal_rx.recv() => {
-                   self.write_frame(frame).await?
-                }
-                else => break,
+                broadcast_data = self.broadcast_rx.recv() => {
+                    match broadcast_data {
+                        Some(data) => {
+                            let data_clone = data.clone();
+                            self.write_frame(data).await?;
+                            if data_clone.opcode == OpCode::Close {
+                                 break;
+                            }
+                        },
+                        None => break
+                    }
+                },
+                internal_data = self.internal_rx.recv() => {
+                    match internal_data {
+                        Some(frame) => {
+                            self.write_frame(frame).await?
+                        },
+                        None => break
+                    }
+                },
             }
         }
         Ok(())
