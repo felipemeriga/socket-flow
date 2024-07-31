@@ -1,8 +1,8 @@
-use std::io;
-use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc::{Receiver};
 use crate::error::StreamError;
 use crate::frame::{Frame, OpCode};
+use std::io;
+use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc::Receiver;
 
 pub struct WriteStream<W: AsyncWriteExt + Unpin> {
     pub write: W,
@@ -12,7 +12,11 @@ pub struct WriteStream<W: AsyncWriteExt + Unpin> {
 
 impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
     pub fn new(write: W, broadcast_rx: Receiver<Frame>, internal_rx: Receiver<Frame>) -> Self {
-        Self { write, broadcast_rx, internal_rx }
+        Self {
+            write,
+            broadcast_rx,
+            internal_rx,
+        }
     }
 
     pub async fn run(&mut self) -> Result<(), StreamError> {
@@ -59,10 +63,17 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
         if payload_len <= 125 {
             self.write.write_all(&[payload_len as u8]).await?;
         } else if payload_len <= 65535 {
-            self.write.write_all(&[126, (payload_len >> 8) as u8, payload_len as u8]).await?;
+            self.write
+                .write_all(&[126, (payload_len >> 8) as u8, payload_len as u8])
+                .await?;
         } else {
             let bytes = payload_len.to_be_bytes();
-            self.write.write_all(&[127, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]]).await?;
+            self.write
+                .write_all(&[
+                    127, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
+                    bytes[7],
+                ])
+                .await?;
         }
 
         self.write.write_all(&frame.payload).await?;

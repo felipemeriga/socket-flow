@@ -1,19 +1,19 @@
-use std::sync::Arc;
 use crate::connection::WSConnection;
+use crate::error::{HandshakeError, StreamError};
+use crate::frame::Frame;
 use crate::read::{ReadStream, StreamKind};
-use crate::error::{StreamError, HandshakeError};
+use crate::write::WriteStream;
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
 use bytes::BytesMut;
-use rand::{random};
+use rand::random;
 use sha1::{Digest, Sha1};
+use std::sync::Arc;
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc::{channel};
+use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
-use crate::frame::Frame;
-use crate::write::WriteStream;
 
 const SEC_WEBSOCKETS_KEY: &str = "Sec-WebSocket-Key:";
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -59,7 +59,14 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
     second_stage_handshake(StreamKind::Server, buf_reader, writer).await
 }
 
-async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: AsyncWriteExt + Send + Unpin + 'static>(kind: StreamKind, buf_reader: R, writer: W) -> Result {
+async fn second_stage_handshake<
+    R: AsyncReadExt + Send + Unpin + 'static,
+    W: AsyncWriteExt + Send + Unpin + 'static,
+>(
+    kind: StreamKind,
+    buf_reader: R,
+    writer: W,
+) -> Result {
     // We are using tokio async channels to communicate the frames received from the client
     // and another channel to send messages from server to client
     // TODO - Check if 20 is a good number for Buffer size, remembering that channel is async, so if it's full
@@ -80,7 +87,6 @@ async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: Asy
     let mut write_stream = WriteStream::new(writer, write_rx, internal_rx);
 
     let ws_connection = WSConnection::new(read_rx, write_tx, close_rx);
-
 
     let read_tx_r = read_tx.clone();
     // We are spawning poll_messages which is the method for reading the frames from the socket
@@ -110,10 +116,11 @@ async fn second_stage_handshake<R: AsyncReadExt + Send + Unpin + 'static, W: Asy
     Ok(ws_connection)
 }
 
-
 pub async fn perform_client_handshake(stream: TcpStream) -> Result {
     let client_websocket_key = generate_websocket_key();
-    let request = HTTP_HANDSHAKE_REQUEST.replace("{key}", &client_websocket_key).replace("{host}", &stream.local_addr().unwrap().to_string());
+    let request = HTTP_HANDSHAKE_REQUEST
+        .replace("{key}", &client_websocket_key)
+        .replace("{host}", &stream.local_addr().unwrap().to_string());
 
     let (reader, mut writer) = split(stream);
     let mut buf_reader = BufReader::new(reader);
@@ -124,7 +131,6 @@ pub async fn perform_client_handshake(stream: TcpStream) -> Result {
     // for the handshake response, defining this size of Vector would be enough, and also will put a limit
     // to bigger payloads
     let mut buffer: Vec<u8> = vec![0; 1024];
-
 
     // Read the server's response
     let number_read = buf_reader.read(&mut buffer).await?;

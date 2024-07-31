@@ -1,9 +1,9 @@
-use std::time::Duration;
-use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::mpsc::error::SendError;
-use tokio::time::timeout;
 use crate::error::{CloseError, StreamError};
 use crate::frame::{Frame, OpCode};
+use std::time::Duration;
+use tokio::sync::mpsc::error::SendError;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::time::timeout;
 
 const CLOSE_TIMEOUT: u64 = 5;
 pub struct WSConnection {
@@ -13,16 +13,26 @@ pub struct WSConnection {
 }
 
 impl WSConnection {
-    pub fn new(read: Receiver<Result<Vec<u8>, StreamError>>, write: Sender<Frame>, close_rx: Receiver<bool>) -> Self {
-        Self { read, write, close_rx }
+    pub fn new(
+        read: Receiver<Result<Vec<u8>, StreamError>>,
+        write: Sender<Frame>,
+        close_rx: Receiver<bool>,
+    ) -> Self {
+        Self {
+            read,
+            write,
+            close_rx,
+        }
     }
 
     pub async fn close_connection(&mut self) -> Result<(), CloseError> {
-        self.write.send(Frame::new(true, OpCode::Close, Vec::new())).await?;
+        self.write
+            .send(Frame::new(true, OpCode::Close, Vec::new()))
+            .await?;
 
         match timeout(Duration::from_secs(CLOSE_TIMEOUT), self.close_rx.recv()).await {
             Err(err) => Err(err)?,
-            _ => Ok(())
+            _ => Ok(()),
         }
     }
 
@@ -32,6 +42,8 @@ impl WSConnection {
     }
 
     pub async fn send_ping(&mut self) -> Result<(), SendError<Frame>> {
-        self.write.send(Frame::new(true, OpCode::Ping, Vec::new())).await
+        self.write
+            .send(Frame::new(true, OpCode::Ping, Vec::new()))
+            .await
     }
 }

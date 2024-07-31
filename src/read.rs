@@ -1,17 +1,17 @@
+use crate::error::StreamError;
 use crate::frame::{Frame, OpCode, MAX_PAYLOAD_SIZE};
 use std::io;
 use std::io::{Error, ErrorKind};
-use std::sync::{Arc};
-use tokio::io::{AsyncReadExt};
+use std::sync::Arc;
+use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::error::SendError;
-use tokio::sync::mpsc::{Sender};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
-use crate::error::StreamError;
 
 pub enum StreamKind {
     Client,
-    Server
+    Server,
 }
 
 pub struct ReadStream<R: AsyncReadExt + Unpin> {
@@ -20,13 +20,26 @@ pub struct ReadStream<R: AsyncReadExt + Unpin> {
     fragmented_message: Option<Vec<u8>>,
     read_tx: Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>,
     internal_tx: Sender<Frame>,
-    close_tx: Sender<bool>
+    close_tx: Sender<bool>,
 }
 
 impl<R: AsyncReadExt + Unpin> ReadStream<R> {
-    pub fn new(kind: StreamKind, read: R, read_tx: Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>, internal_tx: Sender<Frame>, close_tx: Sender<bool>) -> Self {
+    pub fn new(
+        kind: StreamKind,
+        read: R,
+        read_tx: Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>,
+        internal_tx: Sender<Frame>,
+        close_tx: Sender<bool>,
+    ) -> Self {
         let fragmented_message = Some(Vec::new());
-        Self { kind, read, fragmented_message, read_tx, internal_tx, close_tx }
+        Self {
+            kind,
+            read,
+            fragmented_message,
+            read_tx,
+            internal_tx,
+            close_tx,
+        }
     }
 
     //
@@ -46,20 +59,35 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                 // If it's the final fragment, then you can process the complete message here.
                                 // You could move the message to somewhere else as well.
                                 if frame.final_fragment {
-                                    println!("Received fragmented message with total length: {}", fragmented_message.len());
+                                    println!(
+                                        "Received fragmented message with total length: {}",
+                                        fragmented_message.len()
+                                    );
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
                                 }
                             } else {
-                                eprintln!("Invalid continuation frame: no fragmented message to continue");
+                                eprintln!(
+                                    "Invalid continuation frame: no fragmented message to continue"
+                                );
                                 break;
                             }
                         }
                         OpCode::Text => {
-                            self.read_tx.lock().await.send(Ok(frame.payload)).await.map_err(|_| StreamError::CommunicationError)?;
+                            self.read_tx
+                                .lock()
+                                .await
+                                .send(Ok(frame.payload))
+                                .await
+                                .map_err(|_| StreamError::CommunicationError)?;
                         }
                         OpCode::Binary => {
-                            self.read_tx.lock().await.send(Ok(frame.payload)).await.map_err(|_| StreamError::CommunicationError)?;
+                            self.read_tx
+                                .lock()
+                                .await
+                                .send(Ok(frame.payload))
+                                .await
+                                .map_err(|_| StreamError::CommunicationError)?;
                         }
                         OpCode::Close => {
                             // We could use macros for implementing different behaviors for stream kinds
@@ -76,16 +104,14 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                 }
                             }
                         }
-                        OpCode::Ping => {
-                            self.send_pong_frame(frame.payload).await?
-                        }
+                        OpCode::Ping => self.send_pong_frame(frame.payload).await?,
                         OpCode::Pong => {
                             // handle Pong here or just absorb and do nothing
                             // You could implement code to log these messages or perform other custom behavior
                         }
                     }
                 }
-                Err(error) => Err(error)?
+                Err(error) => Err(error)?,
             }
         }
         Ok(())
@@ -157,14 +183,12 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         // that has a slow network
         let read_result = timeout(Duration::from_secs(5), self.read.read_exact(&mut payload)).await;
         match read_result {
-            Ok(Ok(_)) => {}              // Continue processing the payload
+            Ok(Ok(_)) => {}        // Continue processing the payload
             Ok(Err(e)) => Err(e)?, // An error occurred while reading
-            Err(_e) => {
-                Err(Error::new(
-                    io::ErrorKind::TimedOut,
-                    "Timed out reading from socket",
-                ))?
-            } // Reading from the socket timed out
+            Err(_e) => Err(Error::new(
+                io::ErrorKind::TimedOut,
+                "Timed out reading from socket",
+            ))?, // Reading from the socket timed out
         }
 
         // Unmasking
@@ -189,7 +213,9 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
     }
 
     pub async fn send_close_frame(&mut self) -> Result<(), SendError<Frame>> {
-        self.internal_tx.send(Frame::new(true, OpCode::Close, Vec::new())).await
+        self.internal_tx
+            .send(Frame::new(true, OpCode::Close, Vec::new()))
+            .await
     }
 }
 
