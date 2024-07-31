@@ -9,6 +9,8 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
+
+type ReadTransmitter = Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>;
 pub enum StreamKind {
     Client,
     Server,
@@ -18,7 +20,7 @@ pub struct ReadStream<R: AsyncReadExt + Unpin> {
     kind: StreamKind,
     pub read: R,
     fragmented_message: Option<Vec<u8>>,
-    read_tx: Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>,
+    read_tx: ReadTransmitter,
     internal_tx: Sender<Frame>,
     close_tx: Sender<bool>,
 }
@@ -27,7 +29,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
     pub fn new(
         kind: StreamKind,
         read: R,
-        read_tx: Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>,
+        read_tx: ReadTransmitter,
         internal_tx: Sender<Frame>,
         close_tx: Sender<bool>,
     ) -> Self {
