@@ -24,16 +24,12 @@ async fn handle_connection(_: SocketAddr, stream: TcpStream) {
                             }
                         }
                     }
-                    else => {
-                        println!("connection dropped");
-                        break;
-                    }
+                    else => break
                 }
             }
         }
         Err(err) => eprintln!("Error when performing handshake: {}", err)
     }
-    println!("closed connection");
 }
 
 

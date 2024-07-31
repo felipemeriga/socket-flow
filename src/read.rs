@@ -199,7 +199,6 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
 // Therefore, if these attributes are dropped, and channels will be closed, and the TCP connection, terminated
 impl<R: AsyncReadExt + Unpin> Drop for ReadStream<R> {
     fn drop(&mut self) {
-        println!("dropping read stream");
         // No need to manually drop parts of our struct, Rust will take care of it automatically.
     }
 }

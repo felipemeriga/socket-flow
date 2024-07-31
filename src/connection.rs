@@ -35,9 +35,3 @@ impl WSConnection {
         self.write.send(Frame::new(true, OpCode::Ping, Vec::new())).await
     }
 }
-
-impl Drop for WSConnection {
-    fn drop(&mut self) {
-        println!("dropping connection")
-    }
-}

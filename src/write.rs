@@ -31,10 +31,7 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
                                 _ => {}
                             }
                         },
-                        None => {
-                            println!("broadcast_rx channel closed!");
-                            break;
-                        },
+                        None => break
                     }
                 },
                 internal_data = self.internal_rx.recv() => {
@@ -42,10 +39,7 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
                         Some(frame) => {
                             self.write_frame(frame).await?
                         },
-                        None => {
-                            println!("internal_rx channel closed!");
-                            break;
-                        },
+                        None => break
                     }
                 },
             }
