@@ -69,5 +69,8 @@ jobs:
           profile: minimal
           override: true
 
+      - name: Bump version
+        uses: tj-actions/cargo-bump@v3
+
       - name: Publish to Crates.io
         run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
