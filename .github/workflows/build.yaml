@@ -57,6 +57,7 @@ jobs:
     name: Publish to Crates.io
     needs: [lint, build_and_test]
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feat/connection-improvements')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
