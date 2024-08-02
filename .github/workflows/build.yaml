@@ -1,6 +1,9 @@
 name: Rust CI/CD Pipeline
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+    types: [opened, reopened]
 
 jobs:
   lint:
@@ -66,9 +69,9 @@ jobs:
           override: true
 
       - name: Install cargo-workspaces
-        run: cargo install cargo-workspaces
+        run: cargo install cargo-workspaces --force
 
       - name: Bump version and publish
-        run: cargo workspaces version minor --auto-publish --no-git-commit --exclude-non-publish
+        run: cargo workspaces version minor --publish on-success --no-git-commit --exclude-non-publish
         env:
           CARGO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
