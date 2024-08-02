@@ -30,6 +30,9 @@ time = "0.3.36"
 
 [workspace]
 members = ["."]
+[workspaces.versioning]
+allow_auto_publish = false
+bump_when_needed = false
 
 [[example]]
 name = "internal_server"
