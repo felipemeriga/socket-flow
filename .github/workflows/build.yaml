@@ -21,10 +21,7 @@ jobs:
         run: rustup component add clippy
 
       - name: Run clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: -- -D warnings
+        run: cargo clippy -- -D warnings
 
   build_and_test:
     name: Build and Test
