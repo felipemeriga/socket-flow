@@ -34,6 +34,15 @@ Features to be added:
 - Autobahn tests
 - TLS/SSL support
 
+## Usage
+
+Add this in your `Cargo.toml`:
+
+```toml
+[dependencies]
+simple-websocket = "*"
+```
+
 ## Example of usage
 
 Here is a ping-pong server example, that you can also find in: [Example](./examples/internal_server.rs)
