@@ -72,7 +72,7 @@ jobs:
         run: cargo install cargo-workspaces
 
       - name: Bump version
-        run: cargo workspaces version minor --no-git-commit --exclude-non-publish
+        run: cargo workspaces version minor
 
       - name: Publish to Crates.io
         run: cargo publish --token ${{ secrets.CRATES_IO_TOKEN }}
