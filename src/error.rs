@@ -1,9 +1,9 @@
+use crate::frame::Frame;
 use std::io;
 use std::string::FromUtf8Error;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::time::error::Elapsed;
-use crate::frame::Frame;
 
 #[derive(Error, Debug)]
 pub enum CloseError {
@@ -16,8 +16,8 @@ pub enum CloseError {
     #[error("{source}")]
     Timeout {
         #[from]
-        source: Elapsed
-    }
+        source: Elapsed,
+    },
 }
 
 #[derive(Error, Debug)]
@@ -34,14 +34,14 @@ pub enum HandshakeError {
     #[error("{source}")]
     FromUtf8Error {
         #[from]
-        source: FromUtf8Error
+        source: FromUtf8Error,
     },
 
     #[error("Server didn't upgrade the connection")]
     NoUpgrade,
 
     #[error("Sever didn't send a valid Sec-WebSocket-Accept key")]
-    InvalidAcceptKey
+    InvalidAcceptKey,
 }
 
 #[derive(Error, Debug)]

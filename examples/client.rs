@@ -1,10 +1,9 @@
+use rand::distr::Alphanumeric;
+use rand::{thread_rng, Rng};
+use simple_websocket::handshake::perform_client_handshake;
 use tokio::net::TcpStream;
 use tokio::select;
-use simple_websocket::handshake::perform_client_handshake;
-use tokio::time::{Duration, interval};
-use rand::{thread_rng, Rng};
-use rand::distr::Alphanumeric;
-use simple_websocket::frame::{Frame, OpCode};
+use tokio::time::{interval, Duration};
 
 async fn handle_connection(stream: TcpStream) {
     match perform_client_handshake(stream).await {
@@ -37,7 +36,8 @@ async fn handle_connection(stream: TcpStream) {
                     _ = ticker.tick() => {
                         let random_string = generate_random_string();
                         let binary_data = Vec::from(random_string);
-                        if ws_connection.write.send(Frame::new(true, OpCode::Text, binary_data)).await.is_err() {
+
+                        if ws_connection.send_data(binary_data).await.is_err() {
                             eprintln!("Failed to send message");
                             break;
                         }
@@ -45,17 +45,18 @@ async fn handle_connection(stream: TcpStream) {
                 }
             }
         }
-        Err(err) => eprintln!("Error when performing handshake: {}", err)
+        Err(err) => eprintln!("Error when performing handshake: {}", err),
     }
 }
 
 #[tokio::main]
 async fn main() {
-    let stream = TcpStream::connect("127.0.0.1:9002").await.expect("Couldn't connect to the server");
+    let stream = TcpStream::connect("127.0.0.1:9002")
+        .await
+        .expect("Couldn't connect to the server");
 
     handle_connection(stream).await;
 }
-
 
 fn generate_random_string() -> String {
     thread_rng()
