@@ -10,7 +10,7 @@ keywords = ["websocket", "io", "web"]
 license = "Apache-2.0"
 repository = "https://github.com/yourusername/my_crate"
 homepage = "https://github.com/felipemeriga/simple-websocket"
-documentation = "Optional link to crate's documentation"
+documentation = "https://github.com/felipemeriga/simple-websocket"
 
 
 [lib]
@@ -27,6 +27,9 @@ log = "0.4.22"
 env_logger = "0.11.4"
 rand = "0.9.0-alpha.1"
 time = "0.3.36"
+
+[workspace]
+members = ["simple-websocket"]
 
 [[example]]
 name = "internal_server"

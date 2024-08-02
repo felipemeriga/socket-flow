@@ -6,10 +6,9 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    permissions: write-all
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
@@ -53,3 +52,27 @@ jobs:
         with:
           command: test
           args: --verbose
+
+  publish:
+    name: Publish to Crates.io
+    needs: [lint, build_and_test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Install cargo-workspaces
+        run: cargo install cargo-workspaces
+
+      - name: Bump version and publish
+        run: cargo workspaces version minor --auto-publish --no-git-commit --exclude-non-publish
+        env:
+          CARGO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
