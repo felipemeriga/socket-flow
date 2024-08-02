@@ -36,7 +36,10 @@ impl WSConnection {
         }
     }
 
-    // TODO - Create method for binary
+    pub async fn send_binary_frame(&mut self, data: Vec<u8>) -> Result<(), SendError<Frame>> {
+        self.write.send(Frame::new(true, OpCode::Binary, data)).await
+    }
+
     pub async fn send_data(&mut self, data: Vec<u8>) -> Result<(), SendError<Frame>> {
         self.write.send(Frame::new(true, OpCode::Text, data)).await
     }
@@ -46,4 +49,5 @@ impl WSConnection {
             .send(Frame::new(true, OpCode::Ping, Vec::new()))
             .await
     }
+    // TODO - Create method for continue OpCode
 }

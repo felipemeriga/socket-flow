@@ -3,7 +3,6 @@
 
 NEXT STEPS
 
-- Lint the application
 - add more exported methods on connection
 - create README.md for the repo (Documentation)
 
@@ -19,3 +18,4 @@ DONE
 - implement methods for close and send messages inside ws_connection, so the end user can't do mistakes with the exported channel,
   for this, we could use a channel that will receive the close success from server, and the close method from ws_connection will be waiting
   on that channel, so we don't close the connection before the server
+- Lint the application
