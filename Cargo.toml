@@ -33,3 +33,6 @@ name = "internal_server"
 
 [[example]]
 name = "client"
+
+[[example]]
+name = "continue_client"

@@ -49,5 +49,28 @@ impl WSConnection {
             .send(Frame::new(true, OpCode::Ping, Vec::new()))
             .await
     }
-    // TODO - Create method for continue OpCode
+
+
+    pub async fn send_large_data_fragmented(&mut self, data: Vec<u8>) -> Result<(),SendError<Frame>> {
+        const MAX_FRAGMENT_SIZE: usize = 5;
+
+        let chunks = data.chunks(MAX_FRAGMENT_SIZE);
+        let total_chunks = chunks.len();
+
+        for (i, chunk) in chunks.enumerate() {
+            let is_final = i == total_chunks - 1;
+            let opcode: OpCode;
+
+            if i == 0 {
+                opcode = OpCode::Text
+            } else {
+                opcode = OpCode::Continue
+            }
+
+            println!("Sending chunk: {}, as opcode: {:?}, data: {:?}", i+1, opcode, String::from_utf8(Vec::from(chunk)));
+            self.write.send(Frame::new(is_final, opcode, Vec::from(chunk))).await?
+        }
+
+        Ok(())
+    }
 }

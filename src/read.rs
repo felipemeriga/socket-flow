@@ -33,7 +33,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         internal_tx: Sender<Frame>,
         close_tx: Sender<bool>,
     ) -> Self {
-        let fragmented_message = Some(Vec::new());
+        let fragmented_message = None;
         Self {
             kind,
             read,
@@ -51,6 +51,13 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
             match self.read_frame().await {
                 Ok(frame) => {
                     match frame.opcode {
+                        OpCode::Text | OpCode::Binary if !frame.final_fragment => { // Starting a new fragmented message
+                            if self.fragmented_message.is_none() {
+                                self.fragmented_message = Some(frame.payload);
+                            } else {
+                                eprintln!("Incoming fragmented message but there is one already in progress");
+                            }
+                        }
                         OpCode::Continue => {
                             // TODO - Find out a better way to handle this case
                             // Check to see if there is an existing-fragmented message
@@ -58,6 +65,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                             if let Some(ref mut fragmented_message) = self.fragmented_message {
                                 fragmented_message.extend_from_slice(&frame.payload);
 
+                                let fragmented_message_clone = fragmented_message.clone();
                                 // If it's the final fragment, then you can process the complete message here.
                                 // You could move the message to somewhere else as well.
                                 if frame.final_fragment {
@@ -65,6 +73,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                         "Received fragmented message with total length: {}",
                                         fragmented_message.len()
                                     );
+                                    println!("Data: {:?}", String::from_utf8(fragmented_message_clone));
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
                                 }
@@ -75,15 +84,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                 break;
                             }
                         }
-                        OpCode::Text => {
-                            self.read_tx
-                                .lock()
-                                .await
-                                .send(Ok(frame.payload))
-                                .await
-                                .map_err(|_| StreamError::CommunicationError)?;
-                        }
-                        OpCode::Binary => {
+                        OpCode::Text | OpCode::Binary => {
                             self.read_tx
                                 .lock()
                                 .await
