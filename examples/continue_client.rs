@@ -1,14 +1,18 @@
 use rand::distr::Alphanumeric;
-use rand::{Rng, thread_rng};
-use tokio::net::TcpStream;
+use rand::{thread_rng, Rng};
 use simple_websocket::handshake::perform_client_handshake;
+use tokio::net::TcpStream;
 
 async fn handle_connection(stream: TcpStream) {
     match perform_client_handshake(stream).await {
         Ok(mut ws_connection) => {
             let my_random_string = generate_random_string();
             println!("Sending random string: {}", my_random_string);
-            if ws_connection.send_large_data_fragmented(Vec::from(my_random_string)).await.is_err() {
+            if ws_connection
+                .send_large_data_fragmented(Vec::from(my_random_string))
+                .await
+                .is_err()
+            {
                 eprintln!("Error occurred when sending data in chunks");
             }
 

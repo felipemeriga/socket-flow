@@ -37,7 +37,9 @@ impl WSConnection {
     }
 
     pub async fn send_binary_frame(&mut self, data: Vec<u8>) -> Result<(), SendError<Frame>> {
-        self.write.send(Frame::new(true, OpCode::Binary, data)).await
+        self.write
+            .send(Frame::new(true, OpCode::Binary, data))
+            .await
     }
 
     pub async fn send_data(&mut self, data: Vec<u8>) -> Result<(), SendError<Frame>> {
@@ -50,25 +52,36 @@ impl WSConnection {
             .await
     }
 
-
-    pub async fn send_large_data_fragmented(&mut self, data: Vec<u8>) -> Result<(),SendError<Frame>> {
-        const MAX_FRAGMENT_SIZE: usize = 5;
+    pub async fn send_large_data_fragmented(
+        &mut self,
+        data: Vec<u8>,
+    ) -> Result<(), SendError<Frame>> {
+        // We can set the MAX_FRAGMENT_SIZE to 65536 bytes(64KB), which is the maximum
+        // size of a TCP packet. As TCP is based in packets, and HTTP and WS works on the top of TCP, any
+        // fragment greater than 64KB would still work, since it will be divided into packets
+        const MAX_FRAGMENT_SIZE: usize = 64 * 1024;
 
         let chunks = data.chunks(MAX_FRAGMENT_SIZE);
         let total_chunks = chunks.len();
 
         for (i, chunk) in chunks.enumerate() {
             let is_final = i == total_chunks - 1;
-            let opcode: OpCode;
 
-            if i == 0 {
-                opcode = OpCode::Text
+            let opcode = if i == 0 {
+                OpCode::Text
             } else {
-                opcode = OpCode::Continue
-            }
+                OpCode::Continue
+            };
 
-            println!("Sending chunk: {}, as opcode: {:?}, data: {:?}", i+1, opcode, String::from_utf8(Vec::from(chunk)));
-            self.write.send(Frame::new(is_final, opcode, Vec::from(chunk))).await?
+            println!(
+                "Sending chunk: {}, as opcode: {:?}, data: {:?}",
+                i + 1,
+                opcode,
+                String::from_utf8(Vec::from(chunk))
+            );
+            self.write
+                .send(Frame::new(is_final, opcode, Vec::from(chunk)))
+                .await?
         }
 
         Ok(())

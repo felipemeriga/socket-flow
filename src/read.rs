@@ -9,7 +9,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
-
 type ReadTransmitter = Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>;
 pub enum StreamKind {
     Client,
@@ -51,17 +50,21 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
             match self.read_frame().await {
                 Ok(frame) => {
                     match frame.opcode {
-                        OpCode::Text | OpCode::Binary if !frame.final_fragment => { // Starting a new fragmented message
+                        // By default, in order to start a fragmented message, the first frame should have a Text or Binary opcode,
+                        // with a FIN bit set to 0
+                        OpCode::Text | OpCode::Binary if !frame.final_fragment => {
+                            // Starting a new fragmented message
                             if self.fragmented_message.is_none() {
                                 self.fragmented_message = Some(frame.payload);
                             } else {
-                                eprintln!("Incoming fragmented message but there is one already in progress");
+                                Err(StreamError::FragmentedInProgress)?
                             }
                         }
+                        // Per WebSockets RFC, the Continue opcode is specifically meant for continuation frames of a fragmented message
+                        // The first frame of a fragmented message should contain either a text(0x1) or binary(0x2) opcode.
+                        // From the second frame to the last frame but one, the opcode should be set to continue (0x0)
+                        // and the fin set to 0. The last frame should have the opcode set to continue and fin set to 1
                         OpCode::Continue => {
-                            // TODO - Find out a better way to handle this case
-                            // Check to see if there is an existing-fragmented message
-                            // Append the payload to the existing one
                             if let Some(ref mut fragmented_message) = self.fragmented_message {
                                 fragmented_message.extend_from_slice(&frame.payload);
 
@@ -73,15 +76,15 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                         "Received fragmented message with total length: {}",
                                         fragmented_message.len()
                                     );
-                                    println!("Data: {:?}", String::from_utf8(fragmented_message_clone));
+                                    println!(
+                                        "Data: {:?}",
+                                        String::from_utf8(fragmented_message_clone)
+                                    );
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
                                 }
                             } else {
-                                eprintln!(
-                                    "Invalid continuation frame: no fragmented message to continue"
-                                );
-                                break;
+                                Err(StreamError::InvalidContinuationFrame)?
                             }
                         }
                         OpCode::Text | OpCode::Binary => {

@@ -66,4 +66,10 @@ pub enum StreamError {
         #[from]
         source: SendError<bool>,
     },
+
+    #[error("Incoming fragmented message but there is one already in progress")]
+    FragmentedInProgress,
+
+    #[error("Invalid continuation frame: no fragmented message to continue")]
+    InvalidContinuationFrame,
 }
