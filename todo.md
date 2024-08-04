@@ -3,7 +3,6 @@
 
 ## NEXT STEPS
 
-- implement and test Continue Opcodes for client and server
 - implement server example using ws_connection internally for sending custom data
 - unit tests
 - integration tests
@@ -25,3 +24,4 @@
   for this, we could use a channel that will receive the close success from server, and the close method from ws_connection will be waiting
   on that channel, so we don't close the connection before the server
 - Lint the application
+- implement and test Continue Opcodes for client and server
