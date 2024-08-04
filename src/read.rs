@@ -72,14 +72,13 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                 // If it's the final fragment, then you can process the complete message here.
                                 // You could move the message to somewhere else as well.
                                 if frame.final_fragment {
-                                    println!(
-                                        "Received fragmented message with total length: {}",
-                                        fragmented_message.len()
-                                    );
-                                    println!(
-                                        "Data: {:?}",
-                                        String::from_utf8(fragmented_message_clone)
-                                    );
+                                    self.read_tx
+                                        .lock()
+                                        .await
+                                        .send(Ok(fragmented_message_clone))
+                                        .await
+                                        .map_err(|_| StreamError::CommunicationError)?;
+
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
                                 }

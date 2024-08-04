@@ -52,6 +52,8 @@ impl WSConnection {
             .await
     }
 
+    // This function can be used to send large payloads, that will be divided in chunks using fragmented
+    // messages, and Continue opcode
     pub async fn send_large_data_fragmented(
         &mut self,
         data: Vec<u8>,
@@ -73,12 +75,6 @@ impl WSConnection {
                 OpCode::Continue
             };
 
-            println!(
-                "Sending chunk: {}, as opcode: {:?}, data: {:?}",
-                i + 1,
-                opcode,
-                String::from_utf8(Vec::from(chunk))
-            );
             self.write
                 .send(Frame::new(is_final, opcode, Vec::from(chunk)))
                 .await?
