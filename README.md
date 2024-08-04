@@ -3,6 +3,7 @@
 Simple async WebSockets implementation for Tokio stack.
 
 [![Apache licensed](https://img.shields.io/badge/license-Apache-blue.svg)](./LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/simple-websocket.svg?maxAge=2592000)](https://crates.io/crates/simple-websocket)
 
 ## Introduction
 
@@ -24,13 +25,12 @@ reference wide established libraries, like  [`tungstenite-rs`](https://github.co
 
 Most of all WebSockets RFC features are implemented, like:
 - Handshake process, key parsing and generation
-- OpCodes handling, like `Text`, `Binary`, `Ping` and `Pong`
+- OpCodes handling, like `Text`, `Binary`, `Ping`, `Pong` and `Continue`
 - Multiple subscriptions
 - Scalability
 - Error handling
 
 Features to be added:
-- Continue OpCode handling
 - Autobahn tests
 - TLS/SSL support
 

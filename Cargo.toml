@@ -1,6 +1,6 @@
 [package]
 name = "simple-websocket"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Felipe Meriga <felipe.meriga@gmail.com>"]
 description = "a simple WebSockets implementation, to be used in clients and servers"
