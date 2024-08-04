@@ -1,6 +1,6 @@
-pub mod error;
-pub mod handshake;
-mod frame;
 mod connection;
+pub mod error;
+mod frame;
+pub mod handshake;
 mod read;
 mod write;

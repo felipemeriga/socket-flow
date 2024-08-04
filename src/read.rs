@@ -9,7 +9,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
-
 type ReadTransmitter = Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>;
 pub enum StreamKind {
     Client,
@@ -33,7 +32,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         internal_tx: Sender<Frame>,
         close_tx: Sender<bool>,
     ) -> Self {
-        let fragmented_message = Some(Vec::new());
+        let fragmented_message = None;
         Self {
             kind,
             read,
@@ -51,39 +50,43 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
             match self.read_frame().await {
                 Ok(frame) => {
                     match frame.opcode {
+                        // By default, in order to start a fragmented message, the first frame should have a Text or Binary opcode,
+                        // with a FIN bit set to 0
+                        OpCode::Text | OpCode::Binary if !frame.final_fragment => {
+                            // Starting a new fragmented message
+                            if self.fragmented_message.is_none() {
+                                self.fragmented_message = Some(frame.payload);
+                            } else {
+                                Err(StreamError::FragmentedInProgress)?
+                            }
+                        }
+                        // Per WebSockets RFC, the Continue opcode is specifically meant for continuation frames of a fragmented message
+                        // The first frame of a fragmented message should contain either a text(0x1) or binary(0x2) opcode.
+                        // From the second frame to the last frame but one, the opcode should be set to continue (0x0)
+                        // and the fin set to 0. The last frame should have the opcode set to continue and fin set to 1
                         OpCode::Continue => {
-                            // TODO - Find out a better way to handle this case
-                            // Check to see if there is an existing-fragmented message
-                            // Append the payload to the existing one
                             if let Some(ref mut fragmented_message) = self.fragmented_message {
                                 fragmented_message.extend_from_slice(&frame.payload);
 
+                                let fragmented_message_clone = fragmented_message.clone();
                                 // If it's the final fragment, then you can process the complete message here.
                                 // You could move the message to somewhere else as well.
                                 if frame.final_fragment {
-                                    println!(
-                                        "Received fragmented message with total length: {}",
-                                        fragmented_message.len()
-                                    );
+                                    self.read_tx
+                                        .lock()
+                                        .await
+                                        .send(Ok(fragmented_message_clone))
+                                        .await
+                                        .map_err(|_| StreamError::CommunicationError)?;
+
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
                                 }
                             } else {
-                                eprintln!(
-                                    "Invalid continuation frame: no fragmented message to continue"
-                                );
-                                break;
+                                Err(StreamError::InvalidContinuationFrame)?
                             }
                         }
-                        OpCode::Text => {
-                            self.read_tx
-                                .lock()
-                                .await
-                                .send(Ok(frame.payload))
-                                .await
-                                .map_err(|_| StreamError::CommunicationError)?;
-                        }
-                        OpCode::Binary => {
+                        OpCode::Text | OpCode::Binary => {
                             self.read_tx
                                 .lock()
                                 .await
