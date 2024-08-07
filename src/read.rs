@@ -78,7 +78,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                         // TODO - Check if we need to send Continue or Text or Binary
                                         .send(Ok(Frame::new(
                                             true,
-                                            OpCode::Continue,
+                                            OpCode::Text,
                                             fragmented_message_clone,
                                         )))
                                         .await
@@ -92,6 +92,12 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                             }
                         }
                         OpCode::Text | OpCode::Binary => {
+                            // If we have a fragmented message in progress, and we receive a Text or Binary
+                            // with FIN bit as 1(final), before receiving a Continue Opcode with FIN bit 1(Last fragment)
+                            // we should disconnect
+                            if self.fragmented_message.is_some() {
+                                Err(StreamError::InvalidFrameFragmentation)?
+                            }
                             self.read_tx
                                 .lock()
                                 .await
