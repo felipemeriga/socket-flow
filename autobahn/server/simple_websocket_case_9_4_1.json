@@ -1,0 +1,135 @@
+{
+   "agent": "simple-websocket",
+   "behavior": "FAILED",
+   "behaviorClose": "OK",
+   "case": 268,
+   "closedByMe": true,
+   "createStats": true,
+   "createWirelog": false,
+   "description": "Send fragmented binary message message with message payload of length 4 * 2**20 (4M). Sent out in fragments of 64.",
+   "droppedByMe": false,
+   "duration": 11567,
+   "expectation": "Receive echo'ed binary message (with payload as sent).",
+   "expected": {},
+   "expectedClose": {
+      "closeCode": [
+         1000
+      ],
+      "closedByMe": true,
+      "requireClean": true
+   },
+   "failedByMe": true,
+   "httpRequest": "GET / HTTP/1.1\r\nUser-Agent: AutobahnTestSuite/0.8.2-0.10.9\r\nHost: host.docker.internal:9002\r\nUpgrade: WebSocket\r\nConnection: Upgrade\r\nPragma: no-cache\r\nCache-Control: no-cache\r\nSec-WebSocket-Key: IPuvKkiy+ovUcWja+EH/iA==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+   "httpResponse": "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: EAMghoaMgydp9OLIFVPGP1x3Nw8=\r\n\r\n",
+   "id": "9.4.1",
+   "isServer": false,
+   "localCloseCode": 1002,
+   "localCloseReason": "received continuation data frame outside fragmented message",
+   "received": [],
+   "remoteCloseCode": null,
+   "remoteCloseReason": null,
+   "reportCompressionRatio": false,
+   "reportTime": true,
+   "result": "Did not receive message within 100 seconds.",
+   "resultClose": "Connection was properly closed",
+   "rxFrameStats": {
+      "0": 1,
+      "8": 1
+   },
+   "rxOctetStats": {
+      "129": 1,
+      "1296": 1,
+      "1460": 32,
+      "2756": 5,
+      "2920": 38,
+      "4216": 4,
+      "4380": 32,
+      "5676": 4,
+      "5817": 1,
+      "5840": 30,
+      "7136": 1,
+      "7300": 36,
+      "8596": 3,
+      "8760": 20,
+      "10056": 7,
+      "10220": 24,
+      "11516": 3,
+      "11680": 21,
+      "12976": 1,
+      "13140": 16,
+      "14436": 7,
+      "14600": 21,
+      "15896": 2,
+      "16060": 15,
+      "17356": 1,
+      "17520": 9,
+      "18687": 1,
+      "18816": 2,
+      "18980": 11,
+      "20276": 1,
+      "20440": 4,
+      "21736": 3,
+      "21900": 2,
+      "23196": 1,
+      "23360": 2,
+      "24656": 1,
+      "24820": 3,
+      "26116": 3,
+      "26280": 2,
+      "27576": 1,
+      "27740": 2,
+      "29036": 1,
+      "29200": 1,
+      "30496": 1,
+      "30660": 1,
+      "31956": 1,
+      "33416": 1,
+      "36500": 2,
+      "37796": 2,
+      "42176": 1,
+      "49640": 1,
+      "50936": 1,
+      "55316": 1,
+      "59696": 1,
+      "65536": 1
+   },
+   "started": "2024-08-07T12:25:44.803Z",
+   "trafficStats": null,
+   "txFrameStats": {
+      "0": 65536,
+      "2": 1,
+      "8": 1
+   },
+   "txOctetStats": {
+      "6": 1,
+      "67": 1,
+      "70": 65536,
+      "251": 1
+   },
+   "wasClean": true,
+   "wasCloseHandshakeTimeout": false,
+   "wasNotCleanReason": null,
+   "wasOpenHandshakeTimeout": false,
+   "wasServerConnectionDropTimeout": false,
+   "wirelog": [
+      [
+         "TO",
+         [
+            251,
+            "474554202f20485454502f312e310d0a557365722d4167656e743a204175746f6261686e5465737453756974652f302e382e322d302e31302e390d0a486f7374 ..."
+         ],
+         false
+      ],
+      [
+         "RO",
+         [
+            129,
+            "485454502f312e312031303120537769746368696e672050726f746f636f6c730d0a436f6e6e656374696f6e3a20557067726164650d0a557067726164653a20 ..."
+         ]
+      ],
+      [
+         "TI",
+         100
+      ]
+   ]
+}

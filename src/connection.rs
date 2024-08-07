@@ -7,14 +7,14 @@ use tokio::time::timeout;
 
 const CLOSE_TIMEOUT: u64 = 5;
 pub struct WSConnection {
-    pub read: Receiver<Result<Vec<u8>, StreamError>>,
+    pub read: Receiver<Result<Frame, StreamError>>,
     write: Sender<Frame>,
     close_rx: Receiver<bool>,
 }
 
 impl WSConnection {
     pub fn new(
-        read: Receiver<Result<Vec<u8>, StreamError>>,
+        read: Receiver<Result<Frame, StreamError>>,
         write: Sender<Frame>,
         close_rx: Receiver<bool>,
     ) -> Self {
@@ -40,6 +40,10 @@ impl WSConnection {
         self.write
             .send(Frame::new(true, OpCode::Binary, data))
             .await
+    }
+
+    pub async fn send_frame(&mut self, frame: Frame) -> Result<(), SendError<Frame>> {
+        self.write.send(frame).await
     }
 
     pub async fn send_data(&mut self, data: Vec<u8>) -> Result<(), SendError<Frame>> {

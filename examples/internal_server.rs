@@ -10,8 +10,8 @@ async fn handle_connection(_: SocketAddr, stream: TcpStream) {
             select! {
                 Some(result) = ws_connection.read.recv() => {
                     match result {
-                        Ok(message) => {
-                            if ws_connection.send_data(message).await.is_err() {
+                        Ok(frame) => {
+                            if ws_connection.send_frame(frame).await.is_err() {
                                 eprintln!("Failed to send message");
                                 break;
                             }

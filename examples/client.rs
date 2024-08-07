@@ -16,8 +16,8 @@ async fn handle_connection(stream: TcpStream) {
                 select! {
                     Some(result) = ws_connection.read.recv() => {
                         match result {
-                            Ok(message) => {
-                                 println!("Received message: {}", &String::from_utf8(message).unwrap());
+                            Ok(frame) => {
+                                 println!("Received message: {}", &String::from_utf8(frame.payload).unwrap());
                                 counter = counter + 1;
                                 // close the connection if 3 messages have already been sent and received
                                 if counter >= 3 {

@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
-type ReadTransmitter = Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>;
+type ReadTransmitter = Arc<Mutex<Sender<Result<Frame, StreamError>>>>;
 pub enum StreamKind {
     Client,
     Server,
@@ -75,7 +75,12 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                     self.read_tx
                                         .lock()
                                         .await
-                                        .send(Ok(fragmented_message_clone))
+                                        // TODO - Check if we need to send Continue or Text or Binary
+                                        .send(Ok(Frame::new(
+                                            true,
+                                            OpCode::Continue,
+                                            fragmented_message_clone,
+                                        )))
                                         .await
                                         .map_err(|_| StreamError::CommunicationError)?;
 
@@ -90,7 +95,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                             self.read_tx
                                 .lock()
                                 .await
-                                .send(Ok(frame.payload))
+                                .send(Ok(frame))
                                 .await
                                 .map_err(|_| StreamError::CommunicationError)?;
                         }

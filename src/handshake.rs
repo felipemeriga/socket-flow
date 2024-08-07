@@ -73,7 +73,7 @@ async fn second_stage_handshake<
     // all the callers that are trying to add new data, will be blocked until we have free space (off course, using await in the method)
     let (write_tx, write_rx) = channel::<Frame>(20);
 
-    let (read_tx, read_rx) = channel::<std::result::Result<Vec<u8>, StreamError>>(20);
+    let (read_tx, read_rx) = channel::<std::result::Result<Frame, StreamError>>(20);
     let read_tx = Arc::new(Mutex::new(read_tx));
 
     // These internal channels are used to communicate between write and read stream

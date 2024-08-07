@@ -1,0 +1,153 @@
+{
+   "agent": "simple-websocket",
+   "behavior": "FAILED",
+   "behaviorClose": "FAILED",
+   "case": 116,
+   "closedByMe": true,
+   "createStats": true,
+   "createWirelog": true,
+   "description": "Send a text message with payload which is not valid UTF-8 in one fragment.<br><br>Payload: 0x80bf80bf",
+   "droppedByMe": true,
+   "duration": 16,
+   "expectation": "The connection is failed immediately, since the payload is not valid UTF-8.",
+   "expected": {
+      "OK": []
+   },
+   "expectedClose": {
+      "closeCode": [
+         1007
+      ],
+      "closedByMe": false,
+      "closedByWrongEndpointIsFatal": true,
+      "requireClean": false
+   },
+   "failedByMe": true,
+   "httpRequest": "GET / HTTP/1.1\r\nUser-Agent: AutobahnTestSuite/0.8.2-0.10.9\r\nHost: host.docker.internal:9002\r\nUpgrade: WebSocket\r\nConnection: Upgrade\r\nPragma: no-cache\r\nCache-Control: no-cache\r\nSec-WebSocket-Key: 58Qv0nf0GRK5jJXyfexXiw==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+   "httpResponse": "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: LCFiscBeeA3kqAFea3aoFbS7kXc=\r\n\r\n",
+   "id": "6.12.5",
+   "isServer": false,
+   "localCloseCode": 1007,
+   "localCloseReason": "encountered invalid UTF-8 while processing text message at payload octet index 0",
+   "received": [],
+   "remoteCloseCode": null,
+   "remoteCloseReason": null,
+   "reportCompressionRatio": false,
+   "reportTime": false,
+   "result": "Actual events match at least one expected.",
+   "resultClose": "The connection was failed by the wrong endpoint",
+   "rxFrameStats": {
+      "1": 1
+   },
+   "rxOctetStats": {
+      "1": 1,
+      "5": 1,
+      "129": 1
+   },
+   "started": "2024-08-07T12:25:17.868Z",
+   "trafficStats": null,
+   "txFrameStats": {
+      "1": 1,
+      "8": 1
+   },
+   "txOctetStats": {
+      "10": 1,
+      "88": 1,
+      "251": 1
+   },
+   "wasClean": false,
+   "wasCloseHandshakeTimeout": false,
+   "wasNotCleanReason": null,
+   "wasOpenHandshakeTimeout": false,
+   "wasServerConnectionDropTimeout": false,
+   "wirelog": [
+      [
+         "TO",
+         [
+            251,
+            "474554202f20485454502f312e310d0a557365722d4167656e743a204175746f6261686e5465737453756974652f302e382e322d302e31302e390d0a486f7374 ..."
+         ],
+         false
+      ],
+      [
+         "RO",
+         [
+            129,
+            "485454502f312e312031303120537769746368696e672050726f746f636f6c730d0a436f6e6e656374696f6e3a20557067726164650d0a557067726164653a20 ..."
+         ]
+      ],
+      [
+         "TF",
+         [
+            4,
+            "0x80bf80bf"
+         ],
+         1,
+         true,
+         0,
+         "b7842638",
+         null,
+         null,
+         false
+      ],
+      [
+         "TO",
+         [
+            10,
+            "8184b7842638373ba687"
+         ],
+         false
+      ],
+      [
+         "KL",
+         0.5
+      ],
+      [
+         "RO",
+         [
+            1,
+            "81"
+         ]
+      ],
+      [
+         "RO",
+         [
+            5,
+            "0480bf80bf"
+         ]
+      ],
+      [
+         "TF",
+         [
+            82,
+            "0x03ef656e636f756e746572656420696e76616c6964205554462d38207768696c652070726f63657373696e672074657874206d65737361676520617420706179 ..."
+         ],
+         8,
+         true,
+         0,
+         "f4c6f1a6",
+         null,
+         null,
+         false
+      ],
+      [
+         "TO",
+         [
+            88,
+            "88d2f4c6f1a6f72994c897a984c880a383c390e698c882a79dcf90e6a4f2b2ebc98683ae98ca91e681d49ba594d587af9fc1d4b294de80e69cc387b590c191e6 ..."
+         ],
+         false
+      ],
+      [
+         "RF",
+         [
+            0,
+            ""
+         ],
+         1,
+         true,
+         0,
+         false,
+         null
+      ]
+   ]
+}
