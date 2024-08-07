@@ -144,6 +144,18 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         // to get the last 4 bits of the first byte
         let opcode = OpCode::from(header[0] & 0b00001111)?;
 
+        // RSV is a short for "Reserved" fields, they are optional flags that aren't used by the
+        // base websockets protocol, only if there is an extension of the protocol in use.
+        // If these bits are received as non-zero in the absence of any defined extension, the connection
+        // needs to fail, immediately
+        let rsv1 = (header[0] & 0b01000000) != 0;
+        let rsv2 = (header[0] & 0b00100000) != 0;
+        let rsv3 = (header[0] & 0b00010000) != 0;
+
+        if rsv1 || rsv2 || rsv3 {
+            return Err(Error::new(ErrorKind::InvalidData, "RSV not zero"));
+        }
+
         // As a rule in websockets protocol, if your opcode is a control opcode(ping,pong,close), your message can't be fragmented(split between multiple frames)
         if !final_fragment && opcode.is_control() {
             Err(Error::new(
