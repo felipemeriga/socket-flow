@@ -25,6 +25,11 @@ impl WSConnection {
         }
     }
 
+    // This function will be used for closing the connection between two instances, mainly it will
+    // be used by a client,
+    // to request disconnection with a server.It first sends a close frame
+    // through the socket, and waits until it receives the confirmation in a channel
+    // executing it inside a timeout, to avoid a long waiting time
     pub async fn close_connection(&mut self) -> Result<(), CloseError> {
         self.write
             .send(Frame::new(true, OpCode::Close, Vec::new()))
@@ -36,20 +41,18 @@ impl WSConnection {
         }
     }
 
-    pub async fn send_binary_frame(&mut self, data: Vec<u8>) -> Result<(), SendError<Frame>> {
-        self.write
-            .send(Frame::new(true, OpCode::Binary, data))
-            .await
-    }
-
+    // This function can be used to send any frame, with a specific payload through the socket
     pub async fn send_frame(&mut self, frame: Frame) -> Result<(), SendError<Frame>> {
         self.write.send(frame).await
     }
 
+    // This function will be used to send general data as a Vector of bytes, and by default will
+    // be sent as a text opcode
     pub async fn send_data(&mut self, data: Vec<u8>) -> Result<(), SendError<Frame>> {
         self.write.send(Frame::new(true, OpCode::Text, data)).await
     }
 
+    // It will send a ping frame through the socket
     pub async fn send_ping(&mut self) -> Result<(), SendError<Frame>> {
         self.write
             .send(Frame::new(true, OpCode::Ping, Vec::new()))

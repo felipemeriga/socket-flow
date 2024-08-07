@@ -161,6 +161,14 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         // payload length, or the size of the data being sent in the frame.
         let mut length = (header[1] & 0b01111111) as usize;
 
+        // Control frames are only allowed to have a payload up to and including 125 octets
+        if length > 125 && opcode.is_control() {
+            Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Control frame with invalid payload size, can be greater than 125",
+            ))?;
+        }
+
         if length == 126 {
             let mut be_bytes = [0u8; 2];
             self.read.read_exact(&mut be_bytes).await?;
