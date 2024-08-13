@@ -15,10 +15,16 @@ pub enum StreamKind {
     Server,
 }
 
+#[derive(Clone)]
+struct FragmentedMessage {
+    fragments: Vec<u8>,
+    op_code: OpCode
+}
+
 pub struct ReadStream<R: AsyncReadExt + Unpin> {
     kind: StreamKind,
     pub read: R,
-    fragmented_message: Option<Vec<u8>>,
+    fragmented_message: Option<FragmentedMessage>,
     read_tx: ReadTransmitter,
     internal_tx: Sender<Frame>,
     close_tx: Sender<bool>,
@@ -55,7 +61,10 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                         OpCode::Text | OpCode::Binary if !frame.final_fragment => {
                             // Starting a new fragmented message
                             if self.fragmented_message.is_none() {
-                                self.fragmented_message = Some(frame.payload);
+                                self.fragmented_message = Some(FragmentedMessage{
+                                    op_code: frame.opcode,
+                                    fragments: frame.payload
+                                });
                             } else {
                                 Err(StreamError::FragmentedInProgress)?
                             }
@@ -66,26 +75,27 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                         // and the fin set to 0. The last frame should have the opcode set to continue and fin set to 1
                         OpCode::Continue => {
                             if let Some(ref mut fragmented_message) = self.fragmented_message {
-                                fragmented_message.extend_from_slice(&frame.payload);
+                                fragmented_message.fragments.extend_from_slice(&frame.payload);
 
                                 let fragmented_message_clone = fragmented_message.clone();
                                 // If it's the final fragment, then you can process the complete message here.
                                 // You could move the message to somewhere else as well.
                                 if frame.final_fragment {
-                                    self.read_tx
-                                        .lock()
-                                        .await
-                                        // TODO - Check if we need to send Continue or Text or Binary
-                                        .send(Ok(Frame::new(
-                                            true,
-                                            OpCode::Text,
-                                            fragmented_message_clone,
-                                        )))
-                                        .await
-                                        .map_err(|_| StreamError::CommunicationError)?;
-
+                                    fragmented_message.fragments = vec![];
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
+
+                                    // Since a clone copies the entire reference to a new reference,
+                                    // if you change the original data,
+                                    // the copy won't be modified
+                                    // and this copy variable will be dropped
+                                    // when the scope of this
+                                    // match ends
+                                    self.transmit_message(Frame::new(
+                                        true,
+                                        fragmented_message_clone.op_code,
+                                        fragmented_message_clone.fragments,
+                                    )).await?;
                                 }
                             } else {
                                 Err(StreamError::InvalidContinuationFrame)?
@@ -98,12 +108,8 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                             if self.fragmented_message.is_some() {
                                 Err(StreamError::InvalidFrameFragmentation)?
                             }
-                            self.read_tx
-                                .lock()
-                                .await
-                                .send(Ok(frame))
-                                .await
-                                .map_err(|_| StreamError::CommunicationError)?;
+
+                            self.transmit_message(frame).await?;
                         }
                         OpCode::Close => {
                             // We could use macros for implementing different behaviors for stream kinds
@@ -252,6 +258,20 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         self.internal_tx
             .send(Frame::new(true, OpCode::Close, Vec::new()))
             .await
+    }
+
+    pub async fn transmit_message(&mut self, frame: Frame) -> Result<(), StreamError> {
+        // According to WebSockets RFC, The text opcode MUST be encoded as UTF-8
+        if frame.opcode == OpCode::Text {
+            let text_payload = frame.clone().payload;
+            _ = String::from_utf8(text_payload)?
+        }
+
+        self.read_tx
+            .lock()
+            .await
+            .send(Ok(frame)).await
+            .map_err(|_| StreamError::CommunicationError)
     }
 }
 
