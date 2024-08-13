@@ -9,18 +9,24 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
-type ReadTransmitter = Arc<Mutex<Sender<Result<Vec<u8>, StreamError>>>>;
+type ReadTransmitter = Arc<Mutex<Sender<Result<Frame, StreamError>>>>;
 pub enum StreamKind {
     Client,
     Server,
 }
 
+#[derive(Clone)]
+struct FragmentedMessage {
+    fragments: Vec<u8>,
+    op_code: OpCode,
+}
+
 pub struct ReadStream<R: AsyncReadExt + Unpin> {
     kind: StreamKind,
     pub read: R,
-    fragmented_message: Option<Vec<u8>>,
+    fragmented_message: Option<FragmentedMessage>,
     read_tx: ReadTransmitter,
-    internal_tx: Sender<Frame>,
+    write_tx: Arc<Mutex<Sender<Frame>>>,
     close_tx: Sender<bool>,
 }
 
@@ -29,7 +35,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         kind: StreamKind,
         read: R,
         read_tx: ReadTransmitter,
-        internal_tx: Sender<Frame>,
+        write_tx: Arc<Mutex<Sender<Frame>>>,
         close_tx: Sender<bool>,
     ) -> Self {
         let fragmented_message = None;
@@ -38,7 +44,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
             read,
             fragmented_message,
             read_tx,
-            internal_tx,
+            write_tx,
             close_tx,
         }
     }
@@ -55,7 +61,10 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                         OpCode::Text | OpCode::Binary if !frame.final_fragment => {
                             // Starting a new fragmented message
                             if self.fragmented_message.is_none() {
-                                self.fragmented_message = Some(frame.payload);
+                                self.fragmented_message = Some(FragmentedMessage {
+                                    op_code: frame.opcode,
+                                    fragments: frame.payload,
+                                });
                             } else {
                                 Err(StreamError::FragmentedInProgress)?
                             }
@@ -66,33 +75,44 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                         // and the fin set to 0. The last frame should have the opcode set to continue and fin set to 1
                         OpCode::Continue => {
                             if let Some(ref mut fragmented_message) = self.fragmented_message {
-                                fragmented_message.extend_from_slice(&frame.payload);
+                                fragmented_message
+                                    .fragments
+                                    .extend_from_slice(&frame.payload);
 
                                 let fragmented_message_clone = fragmented_message.clone();
                                 // If it's the final fragment, then you can process the complete message here.
                                 // You could move the message to somewhere else as well.
                                 if frame.final_fragment {
-                                    self.read_tx
-                                        .lock()
-                                        .await
-                                        .send(Ok(fragmented_message_clone))
-                                        .await
-                                        .map_err(|_| StreamError::CommunicationError)?;
-
+                                    fragmented_message.fragments = vec![];
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
+
+                                    // Since a clone copies the entire reference to a new reference,
+                                    // if you change the original data,
+                                    // the copy won't be modified
+                                    // and this copy variable will be dropped
+                                    // when the scope of this
+                                    // match ends
+                                    self.transmit_message(Frame::new(
+                                        true,
+                                        fragmented_message_clone.op_code,
+                                        fragmented_message_clone.fragments,
+                                    ))
+                                    .await?;
                                 }
                             } else {
                                 Err(StreamError::InvalidContinuationFrame)?
                             }
                         }
                         OpCode::Text | OpCode::Binary => {
-                            self.read_tx
-                                .lock()
-                                .await
-                                .send(Ok(frame.payload))
-                                .await
-                                .map_err(|_| StreamError::CommunicationError)?;
+                            // If we have a fragmented message in progress, and we receive a Text or Binary
+                            // with FIN bit as 1(final), before receiving a Continue Opcode with FIN bit 1(Last fragment)
+                            // we should disconnect
+                            if self.fragmented_message.is_some() {
+                                Err(StreamError::InvalidFrameFragmentation)?
+                            }
+
+                            self.transmit_message(frame).await?;
                         }
                         OpCode::Close => {
                             // We could use macros for implementing different behaviors for stream kinds
@@ -109,7 +129,9 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                 }
                             }
                         }
-                        OpCode::Ping => self.send_pong_frame(frame.payload).await?,
+                        OpCode::Ping => {
+                            self.send_pong_frame(frame.payload).await?;
+                        }
                         OpCode::Pong => {
                             // handle Pong here or just absorb and do nothing
                             // You could implement code to log these messages or perform other custom behavior
@@ -124,7 +146,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
 
     async fn send_pong_frame(&mut self, payload: Vec<u8>) -> Result<(), SendError<Frame>> {
         let pong_frame = Frame::new(true, OpCode::Pong, payload);
-        self.internal_tx.send(pong_frame).await
+        self.write_tx.lock().await.send(pong_frame).await
     }
 
     pub async fn read_frame(&mut self) -> Result<Frame, Error> {
@@ -138,6 +160,18 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         // The opcode is the last 4 bits of the first byte in a websockets frame, here we are doing a bitwise AND operation & 0b00001111
         // to get the last 4 bits of the first byte
         let opcode = OpCode::from(header[0] & 0b00001111)?;
+
+        // RSV is a short for "Reserved" fields, they are optional flags that aren't used by the
+        // base websockets protocol, only if there is an extension of the protocol in use.
+        // If these bits are received as non-zero in the absence of any defined extension, the connection
+        // needs to fail, immediately
+        let rsv1 = (header[0] & 0b01000000) != 0;
+        let rsv2 = (header[0] & 0b00100000) != 0;
+        let rsv3 = (header[0] & 0b00010000) != 0;
+
+        if rsv1 || rsv2 || rsv3 {
+            return Err(Error::new(ErrorKind::InvalidData, "RSV not zero"));
+        }
 
         // As a rule in websockets protocol, if your opcode is a control opcode(ping,pong,close), your message can't be fragmented(split between multiple frames)
         if !final_fragment && opcode.is_control() {
@@ -155,6 +189,14 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         // Mask bit - which we discussed before - and the next 7 bits are used to represent the
         // payload length, or the size of the data being sent in the frame.
         let mut length = (header[1] & 0b01111111) as usize;
+
+        // Control frames are only allowed to have a payload up to and including 125 octets
+        if length > 125 && opcode.is_control() {
+            Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Control frame with invalid payload size, can be greater than 125",
+            ))?;
+        }
 
         if length == 126 {
             let mut be_bytes = [0u8; 2];
@@ -218,9 +260,26 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
     }
 
     pub async fn send_close_frame(&mut self) -> Result<(), SendError<Frame>> {
-        self.internal_tx
+        self.write_tx
+            .lock()
+            .await
             .send(Frame::new(true, OpCode::Close, Vec::new()))
             .await
+    }
+
+    pub async fn transmit_message(&mut self, frame: Frame) -> Result<(), StreamError> {
+        // According to WebSockets RFC, The text opcode MUST be encoded as UTF-8
+        if frame.opcode == OpCode::Text {
+            let text_payload = frame.clone().payload;
+            _ = String::from_utf8(text_payload)?
+        }
+
+        self.read_tx
+            .lock()
+            .await
+            .send(Ok(frame))
+            .await
+            .map_err(|_| StreamError::CommunicationError)
     }
 }
 

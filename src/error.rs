@@ -67,6 +67,15 @@ pub enum StreamError {
         source: SendError<bool>,
     },
 
+    #[error("{source}")]
+    UTF8Error {
+        #[from]
+        source: FromUtf8Error,
+    },
+
+    #[error("Invalid frame while there is a fragmented message in progress")]
+    InvalidFrameFragmentation,
+
     #[error("Incoming fragmented message but there is one already in progress")]
     FragmentedInProgress,
 

@@ -3,13 +3,12 @@
 
 ## NEXT STEPS
 
+- autobahn tests for server
 - implement server example using ws_connection internally for sending custom data
 - unit tests
 - integration tests
-- autobahn tests
 - test at scale
 - SSL support
-- create README.md for the repo (Documentation)
 
 ## DONE
 
@@ -25,3 +24,4 @@
   on that channel, so we don't close the connection before the server
 - Lint the application
 - implement and test Continue Opcodes for client and server
+- create README.md for the repo (Documentation)
