@@ -50,3 +50,24 @@ jobs:
         with:
           command: test
           args: --verbose
+
+  autobahn:
+    name: Autobahn tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        rust:
+          - stable
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Running Autobahn TestSuite for server
+        run: ./scripts/autobahn-server.sh
