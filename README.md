@@ -2,8 +2,8 @@
 
 Simple async WebSockets implementation for Tokio stack.
 
-[![Apache licensed](https://img.shields.io/badge/license-Apache-blue.svg)](./LICENSE)
-[![Crates.io](https://img.shields.io/crates/v/socket-flow.svg?maxAge=2592000)](https://crates.io/crates/socket-flow)
+[![Apache licensed](https://img.shields.io/badge/license-Apache-blue.svg)](https://github.com/felipemeriga/socket-flow/blob/main/LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/socket-flow.svg)](https://crates.io/crates/socket-flow)
 
 ## Introduction
 
