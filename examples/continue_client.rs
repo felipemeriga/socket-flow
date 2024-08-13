@@ -1,6 +1,6 @@
 use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
-use simple_websocket::handshake::perform_client_handshake;
+use socket_flow::handshake::perform_client_handshake;
 use tokio::net::TcpStream;
 
 async fn handle_connection(stream: TcpStream) {

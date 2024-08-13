@@ -1,5 +1,5 @@
 use log::*;
-use simple_websocket::handshake::perform_handshake;
+use socket_flow::handshake::perform_handshake;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
