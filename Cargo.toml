@@ -1,5 +1,5 @@
 [package]
-name = "simple-websocket"
+name = "socket-flow"
 version = "0.3.0"
 edition = "2021"
 authors = ["Felipe Meriga <felipe.meriga@gmail.com>"]
@@ -9,12 +9,12 @@ categories = ["web-programming::websocket", "network-programming", "asynchronous
 keywords = ["websocket", "io", "web"]
 license = "Apache-2.0"
 repository = "https://github.com/yourusername/my_crate"
-homepage = "https://github.com/felipemeriga/simple-websocket"
-documentation = "https://github.com/felipemeriga/simple-websocket"
+homepage = "https://github.com/felipemeriga/socket-flow"
+documentation = "https://github.com/felipemeriga/socket-flow"
 
 
 [lib]
-name = "simple_websocket"
+name = "socket_flow"
 path = "src/lib.rs"
 
 [dependencies]

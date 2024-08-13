@@ -1,9 +1,9 @@
-# simple-websocket
+# socket-flow
 
 Simple async WebSockets implementation for Tokio stack.
 
 [![Apache licensed](https://img.shields.io/badge/license-Apache-blue.svg)](./LICENSE)
-[![Crates.io](https://img.shields.io/crates/v/simple-websocket.svg?maxAge=2592000)](https://crates.io/crates/simple-websocket)
+[![Crates.io](https://img.shields.io/crates/v/socket-flow.svg?maxAge=2592000)](https://crates.io/crates/socket-flow)
 
 ## Introduction
 
@@ -40,7 +40,7 @@ Add this in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-simple-websocket = "*"
+socket-flow = "*"
 ```
 
 ## Example of usage
@@ -49,7 +49,7 @@ Here is a ping-pong server example, that you can also find in: [Example](./examp
 
 ```rust
 use log::*;
-use simple_websocket::handshake::perform_handshake;
+use socket_flow::handshake::perform_handshake;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
@@ -100,7 +100,7 @@ async fn main() {
 
 For running this example, you can clone the repo and execute:
 ```shell
-cargo run --color=always --package simple-websocket --example internal_server
+cargo run --color=always --package socket-flow --example internal_server
 ```
 
 This example, creates a TcpListener, binding it to a port, accepting connections, handling each of these connections

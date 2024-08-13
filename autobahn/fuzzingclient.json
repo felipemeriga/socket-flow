@@ -2,7 +2,7 @@
   "outdir": "./autobahn/server",
   "servers": [
     {
-      "agent": "simple-websocket",
+      "agent": "socket-flow",
       "url": "ws://host.docker.internal:9002"
     }
   ],

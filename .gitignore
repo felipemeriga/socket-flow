@@ -17,3 +17,7 @@ Cargo.lock
 # Added by cargo
 
 /target
+http.txt
+
+# Server folder for autobahn testsuite results
+./autobahn/server/
