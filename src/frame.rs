@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 
-pub const MAX_PAYLOAD_SIZE: usize = 10 * 1024 * 1024; // 10MB
+pub const MAX_PAYLOAD_SIZE: usize = 16 * 1024 * 1024; // 16MB
 #[derive(Debug, Clone, PartialEq)]
 pub enum OpCode {
     Continue,
