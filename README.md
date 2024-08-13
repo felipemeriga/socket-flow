@@ -110,6 +110,12 @@ and perform write into the socket operations, including error handling through `
 
 You can check more examples over [Examples](./examples)
 
+## Testing
+
+Socket-flow passes the [Autobahn Test Suite](https://github.com/crossbario/autobahn-testsuite) for
+WebSockets.
+Also, it has some internal tests, for ensuring reliability
+
 ## References
 
 - [`tungstenite-rs`](https://github.com/snapview/tungstenite-rs)
