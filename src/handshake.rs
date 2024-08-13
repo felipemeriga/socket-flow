@@ -68,25 +68,30 @@ async fn second_stage_handshake<
     writer: W,
 ) -> Result {
     // We are using tokio async channels to communicate the frames received from the client
-    // and another channel to send messages from server to client
-    // TODO - Check if 20 is a good number for Buffer size, remembering that channel is async, so if it's full
-    // all the callers that are trying to add new data, will be blocked until we have free space (off course, using await in the method)
+    // and another channel to send messages from server to client;
+    // all the callers that are trying to add new data will be blocked
+    // until we have free space
+    // (off course, using await in the method)
     let (write_tx, write_rx) = channel::<Frame>(20);
+    let write_tx = Arc::new(Mutex::new(write_tx));
 
     let (read_tx, read_rx) = channel::<std::result::Result<Frame, StreamError>>(20);
     let read_tx = Arc::new(Mutex::new(read_tx));
 
-    // These internal channels are used to communicate between write and read stream
-    let (internal_tx, internal_rx) = channel::<Frame>(20);
     let (close_tx, close_rx) = channel::<bool>(1);
 
     let read_tx_stream = read_tx.clone();
-    // We are separating the stream in read and write, because handling them in the same struct, would need us to
-    // wrap some references with Arc<mutex>, and for the sake of a clean syntax, we selected to split it
-    let mut read_stream = ReadStream::new(kind, buf_reader, read_tx_stream, internal_tx, close_tx);
-    let mut write_stream = WriteStream::new(writer, write_rx, internal_rx);
+    let write_tx_stream = write_tx.clone();
+    // We are separating the stream in read and write,
+    // because handling them in the same struct would need us to
+    // wrap some references with Arc<mutex>,
+    // and for the sake of a clean syntax, we selected to split it
+    let mut read_stream =
+        ReadStream::new(kind, buf_reader, read_tx_stream, write_tx_stream, close_tx);
+    let mut write_stream = WriteStream::new(writer, write_rx);
 
-    let ws_connection = WSConnection::new(read_rx, write_tx, close_rx);
+    let write_tx_con = write_tx.clone();
+    let ws_connection = WSConnection::new(read_rx, write_tx_con, close_rx);
 
     let read_tx_r = read_tx.clone();
     // We are spawning poll_messages which is the method for reading the frames from the socket
@@ -96,8 +101,8 @@ async fn second_stage_handshake<
     // Additionally, since our BufReader doesn't change, we only call read methods from it, there is no
     // need to wrap it in an Arc<Mutex>, also because poll_messages read frames sequentially.
     // Also, since this is the only task that holds the ownership of BufReader, if some IO error happens,
-    // poll_messages will return, and since BufReader is only inside the scope of the function, it will be dropped
-    // dropping the WriteHalf, hence, the TCP connection
+    // poll_messages will return. Since BufReader is only inside the scope of the function, it will be dropped
+    //  the WriteHalf, hence, the TCP connection
 
     tokio::spawn(async move {
         if let Err(err) = read_stream.poll_messages().await {

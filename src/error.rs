@@ -70,7 +70,7 @@ pub enum StreamError {
     #[error("{source}")]
     UTF8Error {
         #[from]
-        source: FromUtf8Error
+        source: FromUtf8Error,
     },
 
     #[error("Invalid frame while there is a fragmented message in progress")]

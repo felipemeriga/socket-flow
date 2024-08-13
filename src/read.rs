@@ -18,7 +18,7 @@ pub enum StreamKind {
 #[derive(Clone)]
 struct FragmentedMessage {
     fragments: Vec<u8>,
-    op_code: OpCode
+    op_code: OpCode,
 }
 
 pub struct ReadStream<R: AsyncReadExt + Unpin> {
@@ -26,7 +26,7 @@ pub struct ReadStream<R: AsyncReadExt + Unpin> {
     pub read: R,
     fragmented_message: Option<FragmentedMessage>,
     read_tx: ReadTransmitter,
-    internal_tx: Sender<Frame>,
+    write_tx: Arc<Mutex<Sender<Frame>>>,
     close_tx: Sender<bool>,
 }
 
@@ -35,7 +35,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         kind: StreamKind,
         read: R,
         read_tx: ReadTransmitter,
-        internal_tx: Sender<Frame>,
+        write_tx: Arc<Mutex<Sender<Frame>>>,
         close_tx: Sender<bool>,
     ) -> Self {
         let fragmented_message = None;
@@ -44,7 +44,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
             read,
             fragmented_message,
             read_tx,
-            internal_tx,
+            write_tx,
             close_tx,
         }
     }
@@ -61,9 +61,9 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                         OpCode::Text | OpCode::Binary if !frame.final_fragment => {
                             // Starting a new fragmented message
                             if self.fragmented_message.is_none() {
-                                self.fragmented_message = Some(FragmentedMessage{
+                                self.fragmented_message = Some(FragmentedMessage {
                                     op_code: frame.opcode,
-                                    fragments: frame.payload
+                                    fragments: frame.payload,
                                 });
                             } else {
                                 Err(StreamError::FragmentedInProgress)?
@@ -75,7 +75,9 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                         // and the fin set to 0. The last frame should have the opcode set to continue and fin set to 1
                         OpCode::Continue => {
                             if let Some(ref mut fragmented_message) = self.fragmented_message {
-                                fragmented_message.fragments.extend_from_slice(&frame.payload);
+                                fragmented_message
+                                    .fragments
+                                    .extend_from_slice(&frame.payload);
 
                                 let fragmented_message_clone = fragmented_message.clone();
                                 // If it's the final fragment, then you can process the complete message here.
@@ -95,7 +97,8 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                         true,
                                         fragmented_message_clone.op_code,
                                         fragmented_message_clone.fragments,
-                                    )).await?;
+                                    ))
+                                    .await?;
                                 }
                             } else {
                                 Err(StreamError::InvalidContinuationFrame)?
@@ -126,7 +129,9 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                 }
                             }
                         }
-                        OpCode::Ping => self.send_pong_frame(frame.payload).await?,
+                        OpCode::Ping => {
+                            self.send_pong_frame(frame.payload).await?;
+                        }
                         OpCode::Pong => {
                             // handle Pong here or just absorb and do nothing
                             // You could implement code to log these messages or perform other custom behavior
@@ -141,7 +146,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
 
     async fn send_pong_frame(&mut self, payload: Vec<u8>) -> Result<(), SendError<Frame>> {
         let pong_frame = Frame::new(true, OpCode::Pong, payload);
-        self.internal_tx.send(pong_frame).await
+        self.write_tx.lock().await.send(pong_frame).await
     }
 
     pub async fn read_frame(&mut self) -> Result<Frame, Error> {
@@ -255,7 +260,9 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
     }
 
     pub async fn send_close_frame(&mut self) -> Result<(), SendError<Frame>> {
-        self.internal_tx
+        self.write_tx
+            .lock()
+            .await
             .send(Frame::new(true, OpCode::Close, Vec::new()))
             .await
     }
@@ -270,7 +277,8 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         self.read_tx
             .lock()
             .await
-            .send(Ok(frame)).await
+            .send(Ok(frame))
+            .await
             .map_err(|_| StreamError::CommunicationError)
     }
 }

@@ -7,15 +7,13 @@ use tokio::sync::mpsc::Receiver;
 pub struct WriteStream<W: AsyncWriteExt + Unpin> {
     pub write: W,
     broadcast_rx: Receiver<Frame>,
-    internal_rx: Receiver<Frame>,
 }
 
 impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
-    pub fn new(write: W, broadcast_rx: Receiver<Frame>, internal_rx: Receiver<Frame>) -> Self {
+    pub fn new(write: W, broadcast_rx: Receiver<Frame>) -> Self {
         Self {
             write,
             broadcast_rx,
-            internal_rx,
         }
     }
 
@@ -33,15 +31,7 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
                         },
                         None => break
                     }
-                },
-                internal_data = self.internal_rx.recv() => {
-                    match internal_data {
-                        Some(frame) => {
-                            self.write_frame(frame).await?
-                        },
-                        None => break
-                    }
-                },
+                }
             }
         }
         Ok(())

@@ -1,21 +1,23 @@
 use crate::error::{CloseError, StreamError};
 use crate::frame::{Frame, OpCode};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 
 const CLOSE_TIMEOUT: u64 = 5;
 pub struct WSConnection {
     pub read: Receiver<Result<Frame, StreamError>>,
-    write: Sender<Frame>,
+    write: Arc<Mutex<Sender<Frame>>>,
     close_rx: Receiver<bool>,
 }
 
 impl WSConnection {
     pub fn new(
         read: Receiver<Result<Frame, StreamError>>,
-        write: Sender<Frame>,
+        write: Arc<Mutex<Sender<Frame>>>,
         close_rx: Receiver<bool>,
     ) -> Self {
         Self {
@@ -32,6 +34,8 @@ impl WSConnection {
     // executing it inside a timeout, to avoid a long waiting time
     pub async fn close_connection(&mut self) -> Result<(), CloseError> {
         self.write
+            .lock()
+            .await
             .send(Frame::new(true, OpCode::Close, Vec::new()))
             .await?;
 
@@ -43,18 +47,24 @@ impl WSConnection {
 
     // This function can be used to send any frame, with a specific payload through the socket
     pub async fn send_frame(&mut self, frame: Frame) -> Result<(), SendError<Frame>> {
-        self.write.send(frame).await
+        self.write.lock().await.send(frame).await
     }
 
     // This function will be used to send general data as a Vector of bytes, and by default will
     // be sent as a text opcode
     pub async fn send_data(&mut self, data: Vec<u8>) -> Result<(), SendError<Frame>> {
-        self.write.send(Frame::new(true, OpCode::Text, data)).await
+        self.write
+            .lock()
+            .await
+            .send(Frame::new(true, OpCode::Text, data))
+            .await
     }
 
     // It will send a ping frame through the socket
     pub async fn send_ping(&mut self) -> Result<(), SendError<Frame>> {
         self.write
+            .lock()
+            .await
             .send(Frame::new(true, OpCode::Ping, Vec::new()))
             .await
     }
@@ -83,6 +93,8 @@ impl WSConnection {
             };
 
             self.write
+                .lock()
+                .await
                 .send(Frame::new(is_final, opcode, Vec::from(chunk)))
                 .await?
         }
