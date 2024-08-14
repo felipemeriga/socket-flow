@@ -1,5 +1,5 @@
 use crate::connection::WSConnection;
-use crate::error::{HandshakeError, StreamError};
+use crate::error::Error;
 use crate::frame::Frame;
 use crate::read::{ReadStream, StreamKind};
 use crate::write::WriteStream;
@@ -33,7 +33,7 @@ const HTTP_HANDSHAKE_REQUEST: &str = "GET / HTTP/1.1\r\n\
         Sec-WebSocket-Version: 13\r\n\
         Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\
         \r\n";
-pub type Result = std::result::Result<WSConnection, HandshakeError>;
+pub type Result = std::result::Result<WSConnection, Error>;
 
 // Using Send trait because we are going to run the process to read frames from the socket concurrently
 // TCPStream from tokio implements Send
@@ -51,9 +51,9 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
             writer
                 .write_all(response.as_bytes())
                 .await
-                .map_err(|source| HandshakeError::IOError { source })?
+                .map_err(|source| Error::IOError { source })?
         }
-        None => Err(HandshakeError::NoSecWebsocketKey)?,
+        None => Err(Error::NoSecWebsocketKey)?,
     }
 
     second_stage_handshake(StreamKind::Server, buf_reader, writer).await
@@ -75,7 +75,7 @@ async fn second_stage_handshake<
     let (write_tx, write_rx) = channel::<Frame>(20);
     let write_tx = Arc::new(Mutex::new(write_tx));
 
-    let (read_tx, read_rx) = channel::<std::result::Result<Frame, StreamError>>(20);
+    let (read_tx, read_rx) = channel::<std::result::Result<Frame, Error>>(20);
     let read_tx = Arc::new(Mutex::new(read_tx));
 
     let (close_tx, close_rx) = channel::<bool>(1);
@@ -121,7 +121,9 @@ async fn second_stage_handshake<
     Ok(ws_connection)
 }
 
-pub async fn perform_client_handshake(stream: TcpStream) -> Result {
+pub async fn connect_async(addr: String) -> Result {
+    let stream = TcpStream::connect(addr).await?;
+
     let client_websocket_key = generate_websocket_key();
     let request = HTTP_HANDSHAKE_REQUEST
         .replace("{key}", &client_websocket_key)
@@ -148,13 +150,13 @@ pub async fn perform_client_handshake(stream: TcpStream) -> Result {
 
     // Verify that the server agreed to upgrade the connection
     if !response.contains(SWITCHING_PROTOCOLS) {
-        return Err(HandshakeError::NoUpgrade);
+        return Err(Error::NoUpgrade);
     }
 
     // Generate the server expected accept key using UUID, and checking if it's present in the response
     let expected_accept_value = generate_websocket_accept_value(client_websocket_key);
     if !response.contains(&expected_accept_value) {
-        return Err(HandshakeError::InvalidAcceptKey);
+        return Err(Error::InvalidAcceptKey);
     }
 
     second_stage_handshake(StreamKind::Client, buf_reader, writer).await

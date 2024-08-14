@@ -1,4 +1,4 @@
-use crate::error::{CloseError, StreamError};
+use crate::error::Error;
 use crate::frame::{Frame, OpCode};
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,14 +9,14 @@ use tokio::time::timeout;
 
 const CLOSE_TIMEOUT: u64 = 5;
 pub struct WSConnection {
-    pub read: Receiver<Result<Frame, StreamError>>,
+    pub read: Receiver<Result<Frame, Error>>,
     write: Arc<Mutex<Sender<Frame>>>,
     close_rx: Receiver<bool>,
 }
 
 impl WSConnection {
     pub fn new(
-        read: Receiver<Result<Frame, StreamError>>,
+        read: Receiver<Result<Frame, Error>>,
         write: Arc<Mutex<Sender<Frame>>>,
         close_rx: Receiver<bool>,
     ) -> Self {
@@ -32,7 +32,7 @@ impl WSConnection {
     // to request disconnection with a server.It first sends a close frame
     // through the socket, and waits until it receives the confirmation in a channel
     // executing it inside a timeout, to avoid a long waiting time
-    pub async fn close_connection(&mut self) -> Result<(), CloseError> {
+    pub async fn close_connection(&mut self) -> Result<(), Error> {
         self.write
             .lock()
             .await

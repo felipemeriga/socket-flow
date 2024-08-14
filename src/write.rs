@@ -1,4 +1,4 @@
-use crate::error::StreamError;
+use crate::error::Error;
 use crate::frame::{Frame, OpCode};
 use std::io;
 use tokio::io::AsyncWriteExt;
@@ -17,7 +17,7 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
         }
     }
 
-    pub async fn run(&mut self) -> Result<(), StreamError> {
+    pub async fn run(&mut self) -> Result<(), Error> {
         loop {
             tokio::select! {
                 broadcast_data = self.broadcast_rx.recv() => {

@@ -1,7 +1,5 @@
-use crate::error::StreamError;
+use crate::error::Error;
 use crate::frame::{Frame, OpCode, MAX_PAYLOAD_SIZE};
-use std::io;
-use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::error::SendError;
@@ -9,7 +7,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
-type ReadTransmitter = Arc<Mutex<Sender<Result<Frame, StreamError>>>>;
+type ReadTransmitter = Arc<Mutex<Sender<Result<Frame, Error>>>>;
 pub enum StreamKind {
     Client,
     Server,
@@ -50,7 +48,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
     }
 
     //
-    pub async fn poll_messages(&mut self) -> Result<(), StreamError> {
+    pub async fn poll_messages(&mut self) -> Result<(), Error> {
         // Now in websocket mode, read frames
         loop {
             match self.read_frame().await {
@@ -66,7 +64,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                     fragments: frame.payload,
                                 });
                             } else {
-                                Err(StreamError::FragmentedInProgress)?
+                                Err(Error::FragmentedInProgress)?
                             }
                         }
                         // Per WebSockets RFC, the Continue opcode is specifically meant for continuation frames of a fragmented message
@@ -101,7 +99,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                     .await?;
                                 }
                             } else {
-                                Err(StreamError::InvalidContinuationFrame)?
+                                Err(Error::InvalidContinuationFrame)?
                             }
                         }
                         OpCode::Text | OpCode::Binary => {
@@ -109,7 +107,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                             // with FIN bit as 1(final), before receiving a Continue Opcode with FIN bit 1(Last fragment)
                             // we should disconnect
                             if self.fragmented_message.is_some() {
-                                Err(StreamError::InvalidFrameFragmentation)?
+                                Err(Error::InvalidFrameFragmentation)?
                             }
 
                             self.transmit_message(frame).await?;
@@ -170,15 +168,12 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         let rsv3 = (header[0] & 0b00010000) != 0;
 
         if rsv1 || rsv2 || rsv3 {
-            return Err(Error::new(ErrorKind::InvalidData, "RSV not zero"));
+            return Err(Error::RSVNotZero);
         }
 
         // As a rule in websockets protocol, if your opcode is a control opcode(ping,pong,close), your message can't be fragmented(split between multiple frames)
         if !final_fragment && opcode.is_control() {
-            Err(Error::new(
-                ErrorKind::InvalidInput,
-                "Control frames must not be fragmented",
-            ))?;
+            Err(Error::ControlFramesFragmented)?;
         }
 
         // According to the websocket protocol specification, the first bit of the second byte of each frame is the "Mask bit"
@@ -192,10 +187,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
 
         // Control frames are only allowed to have a payload up to and including 125 octets
         if length > 125 && opcode.is_control() {
-            Err(Error::new(
-                ErrorKind::InvalidInput,
-                "Control frame with invalid payload size, can be greater than 125",
-            ))?;
+            Err(Error::ControlFramePayloadSize)?;
         }
 
         if length == 126 {
@@ -209,7 +201,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         }
 
         if length > MAX_PAYLOAD_SIZE {
-            Err(Error::new(ErrorKind::InvalidData, "Payload too large"))?;
+            Err(Error::PayloadSize)?;
         }
 
         let mask = if masked {
@@ -232,10 +224,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
         match read_result {
             Ok(Ok(_)) => {}        // Continue processing the payload
             Ok(Err(e)) => Err(e)?, // An error occurred while reading
-            Err(_e) => Err(Error::new(
-                io::ErrorKind::TimedOut,
-                "Timed out reading from socket",
-            ))?, // Reading from the socket timed out
+            Err(_e) => Err(_e)?,   // Reading from the socket timed out
         }
 
         // Unmasking
@@ -267,7 +256,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
             .await
     }
 
-    pub async fn transmit_message(&mut self, frame: Frame) -> Result<(), StreamError> {
+    pub async fn transmit_message(&mut self, frame: Frame) -> Result<(), Error> {
         // According to WebSockets RFC, The text opcode MUST be encoded as UTF-8
         if frame.opcode == OpCode::Text {
             let text_payload = frame.clone().payload;
@@ -279,7 +268,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
             .await
             .send(Ok(frame))
             .await
-            .map_err(|_| StreamError::CommunicationError)
+            .map_err(|_| Error::CommunicationError)
     }
 }
 

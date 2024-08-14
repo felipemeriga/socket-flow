@@ -1,10 +1,9 @@
 use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
-use socket_flow::handshake::perform_client_handshake;
-use tokio::net::TcpStream;
+use socket_flow::handshake::connect_async;
 
-async fn handle_connection(stream: TcpStream) {
-    match perform_client_handshake(stream).await {
+async fn handle_connection(addr: String) {
+    match connect_async(addr).await {
         Ok(mut ws_connection) => {
             let my_random_string = generate_random_string();
             println!("Sending random string: {}", my_random_string);
@@ -24,11 +23,7 @@ async fn handle_connection(stream: TcpStream) {
 
 #[tokio::main]
 async fn main() {
-    let stream = TcpStream::connect("127.0.0.1:9002")
-        .await
-        .expect("Couldn't connect to the server");
-
-    handle_connection(stream).await;
+    handle_connection(String::from("127.0.0.1:9002")).await;
 }
 
 fn generate_random_string() -> String {
