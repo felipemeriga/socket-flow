@@ -39,7 +39,7 @@ pub type Result = std::result::Result<WSConnection, Error>;
 // TCPStream from tokio implements Send
 // Using static, because tokio::spawn returns a JoinHandle, because the spawned task could outilive the
 // lifetime of the function call to tokio::spawn.
-pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(stream: T) -> Result {
+pub async fn accept_async<T: AsyncRead + AsyncWrite + Send + 'static>(stream: T) -> Result {
     let (reader, mut writer) = split(stream);
     let mut buf_reader = BufReader::new(reader);
 

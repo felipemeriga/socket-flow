@@ -1,11 +1,11 @@
 use log::*;
-use socket_flow::handshake::perform_handshake;
+use socket_flow::handshake::accept_async;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 
 async fn handle_connection(_: SocketAddr, stream: TcpStream) {
-    match perform_handshake(stream).await {
+    match accept_async(stream).await {
         Ok(mut ws_connection) => loop {
             select! {
                 Some(result) = ws_connection.read.recv() => {
