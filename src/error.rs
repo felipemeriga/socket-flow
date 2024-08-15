@@ -4,6 +4,7 @@ use std::string::FromUtf8Error;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::time::error::Elapsed;
+use url::ParseError;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -16,12 +17,6 @@ pub enum Error {
 
     #[error("channel communication error")]
     CommunicationError,
-
-    #[error("{source}")]
-    CloseChannelError {
-        #[from]
-        source: SendError<bool>,
-    },
 
     // General Errors
     #[error("{source}")]
@@ -74,4 +69,20 @@ pub enum Error {
 
     #[error("Invalid continuation frame: no fragmented message to continue")]
     InvalidContinuationFrame,
+
+    // HTTP Errors
+    #[error("{source}")]
+    URLParseError {
+        #[from]
+        source: ParseError,
+    },
+
+    #[error("Invalid scheme in WebSocket URL")]
+    InvalidSchemeURL,
+
+    #[error("URL has no host")]
+    URLNoHost,
+
+    #[error("URL has no port")]
+    URLNoPort,
 }

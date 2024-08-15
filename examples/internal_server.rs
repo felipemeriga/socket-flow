@@ -11,6 +11,7 @@ async fn handle_connection(_: SocketAddr, stream: TcpStream) {
                 Some(result) = ws_connection.read.recv() => {
                     match result {
                         Ok(frame) => {
+                            println!("received opcode: {:?}", frame.opcode);
                             if ws_connection.send_frame(frame).await.is_err() {
                                 eprintln!("Failed to send message");
                                 break;

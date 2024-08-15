@@ -2,7 +2,7 @@ use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
 use socket_flow::handshake::connect_async;
 
-async fn handle_connection(addr: String) {
+async fn handle_connection(addr: &str) {
     match connect_async(addr).await {
         Ok(mut ws_connection) => {
             let my_random_string = generate_random_string();
@@ -23,7 +23,7 @@ async fn handle_connection(addr: String) {
 
 #[tokio::main]
 async fn main() {
-    handle_connection(String::from("127.0.0.1:9002")).await;
+    handle_connection("ws://127.0.0.1:9002").await;
 }
 
 fn generate_random_string() -> String {

@@ -1,7 +1,7 @@
 use crate::connection::WSConnection;
 use crate::error::Error;
 use crate::frame::Frame;
-use crate::read::{ReadStream, StreamKind};
+use crate::read::{ReadStream};
 use crate::write::WriteStream;
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
@@ -14,6 +14,7 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
+use crate::request::parse_to_http_request;
 
 const SEC_WEBSOCKETS_KEY: &str = "Sec-WebSocket-Key:";
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -25,14 +26,6 @@ const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Sec-WebSocket-Accept: {}\r\n\
         \r\n";
 
-const HTTP_HANDSHAKE_REQUEST: &str = "GET / HTTP/1.1\r\n\
-        Host: {host}\r\n\
-        Connection: Upgrade\r\n\
-        Upgrade: websocket\r\n\
-        Sec-WebSocket-Key: {key}\r\n\
-        Sec-WebSocket-Version: 13\r\n\
-        Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\
-        \r\n";
 pub type Result = std::result::Result<WSConnection, Error>;
 
 // Using Send trait because we are going to run the process to read frames from the socket concurrently
@@ -56,14 +49,13 @@ pub async fn accept_async<T: AsyncRead + AsyncWrite + Send + 'static>(stream: T)
         None => Err(Error::NoSecWebsocketKey)?,
     }
 
-    second_stage_handshake(StreamKind::Server, buf_reader, writer).await
+    second_stage_handshake(buf_reader, writer).await
 }
 
 async fn second_stage_handshake<
     R: AsyncReadExt + Send + Unpin + 'static,
     W: AsyncWriteExt + Send + Unpin + 'static,
 >(
-    kind: StreamKind,
     buf_reader: R,
     writer: W,
 ) -> Result {
@@ -78,8 +70,6 @@ async fn second_stage_handshake<
     let (read_tx, read_rx) = channel::<std::result::Result<Frame, Error>>(20);
     let read_tx = Arc::new(Mutex::new(read_tx));
 
-    let (close_tx, close_rx) = channel::<bool>(1);
-
     let read_tx_stream = read_tx.clone();
     let write_tx_stream = write_tx.clone();
     // We are separating the stream in read and write,
@@ -87,11 +77,11 @@ async fn second_stage_handshake<
     // wrap some references with Arc<mutex>,
     // and for the sake of a clean syntax, we selected to split it
     let mut read_stream =
-        ReadStream::new(kind, buf_reader, read_tx_stream, write_tx_stream, close_tx);
+        ReadStream::new(buf_reader, read_tx_stream, write_tx_stream);
     let mut write_stream = WriteStream::new(writer, write_rx);
 
     let write_tx_con = write_tx.clone();
-    let ws_connection = WSConnection::new(read_rx, write_tx_con, close_rx);
+    let ws_connection = WSConnection::new(read_rx, write_tx_con);
 
     let read_tx_r = read_tx.clone();
     // We are spawning poll_messages which is the method for reading the frames from the socket
@@ -121,13 +111,11 @@ async fn second_stage_handshake<
     Ok(ws_connection)
 }
 
-pub async fn connect_async(addr: String) -> Result {
-    let stream = TcpStream::connect(addr).await?;
-
+pub async fn connect_async(addr: &str) -> Result {
     let client_websocket_key = generate_websocket_key();
-    let request = HTTP_HANDSHAKE_REQUEST
-        .replace("{key}", &client_websocket_key)
-        .replace("{host}", &stream.local_addr().unwrap().to_string());
+    let (request, hostname) = parse_to_http_request(addr, &client_websocket_key)?;
+
+    let stream = TcpStream::connect(hostname).await?;
 
     let (reader, mut writer) = split(stream);
     let mut buf_reader = BufReader::new(reader);
@@ -137,7 +125,7 @@ pub async fn connect_async(addr: String) -> Result {
     // Create a buffer for the server's response, since most of the Websocket won't send a big payload
     // for the handshake response, defining this size of Vector would be enough, and also will put a limit
     // to bigger payloads
-    let mut buffer: Vec<u8> = vec![0; 1024];
+    let mut buffer: Vec<u8> = vec![0; 206];
 
     // Read the server's response
     let number_read = buf_reader.read(&mut buffer).await?;
@@ -159,7 +147,7 @@ pub async fn connect_async(addr: String) -> Result {
         return Err(Error::InvalidAcceptKey);
     }
 
-    second_stage_handshake(StreamKind::Client, buf_reader, writer).await
+    second_stage_handshake(buf_reader, writer).await
 }
 
 // Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the
@@ -221,3 +209,5 @@ fn generate_websocket_key() -> String {
     let random_bytes: [u8; 16] = random();
     BASE64_STANDARD.encode(random_bytes)
 }
+
+

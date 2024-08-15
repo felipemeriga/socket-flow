@@ -11,19 +11,16 @@ const CLOSE_TIMEOUT: u64 = 5;
 pub struct WSConnection {
     pub read: Receiver<Result<Frame, Error>>,
     write: Arc<Mutex<Sender<Frame>>>,
-    close_rx: Receiver<bool>,
 }
 
 impl WSConnection {
     pub fn new(
         read: Receiver<Result<Frame, Error>>,
         write: Arc<Mutex<Sender<Frame>>>,
-        close_rx: Receiver<bool>,
     ) -> Self {
         Self {
             read,
             write,
-            close_rx,
         }
     }
 
@@ -39,7 +36,7 @@ impl WSConnection {
             .send(Frame::new(true, OpCode::Close, Vec::new()))
             .await?;
 
-        match timeout(Duration::from_secs(CLOSE_TIMEOUT), self.close_rx.recv()).await {
+        match timeout(Duration::from_secs(CLOSE_TIMEOUT), self.write.lock().await.closed()).await {
             Err(err) => Err(err)?,
             _ => Ok(()),
         }

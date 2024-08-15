@@ -8,10 +8,6 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 
 type ReadTransmitter = Arc<Mutex<Sender<Result<Frame, Error>>>>;
-pub enum StreamKind {
-    Client,
-    Server,
-}
 
 #[derive(Clone)]
 struct FragmentedMessage {
@@ -20,30 +16,24 @@ struct FragmentedMessage {
 }
 
 pub struct ReadStream<R: AsyncReadExt + Unpin> {
-    kind: StreamKind,
     pub read: R,
     fragmented_message: Option<FragmentedMessage>,
     read_tx: ReadTransmitter,
     write_tx: Arc<Mutex<Sender<Frame>>>,
-    close_tx: Sender<bool>,
 }
 
 impl<R: AsyncReadExt + Unpin> ReadStream<R> {
     pub fn new(
-        kind: StreamKind,
         read: R,
         read_tx: ReadTransmitter,
         write_tx: Arc<Mutex<Sender<Frame>>>,
-        close_tx: Sender<bool>,
     ) -> Self {
         let fragmented_message = None;
         Self {
-            kind,
             read,
             fragmented_message,
             read_tx,
             write_tx,
-            close_tx,
         }
     }
 
@@ -96,7 +86,7 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                                         fragmented_message_clone.op_code,
                                         fragmented_message_clone.fragments,
                                     ))
-                                    .await?;
+                                        .await?;
                                 }
                             } else {
                                 Err(Error::InvalidContinuationFrame)?
@@ -113,19 +103,15 @@ impl<R: AsyncReadExt + Unpin> ReadStream<R> {
                             self.transmit_message(frame).await?;
                         }
                         OpCode::Close => {
-                            // We could use macros for implementing different behaviors for stream kinds
-                            // but this match should solve this, avoid the code complexity, and the extra amount of
-                            // code for a macro
-                            match self.kind {
-                                StreamKind::Server => {
-                                    self.send_close_frame().await?;
-                                    break;
-                                }
-                                StreamKind::Client => {
-                                    self.close_tx.send(true).await?;
-                                    break;
-                                }
+                            // Either if this is being used as a client or server, per websocket
+                            // RFC, if we receive a close,
+                            // we need to respond with a close opcode.
+                            // If the close was initiated by this library, we still want to call
+                            // send_close_frame, to close all the tokio mpsc channels of this connection
+                            if !self.write_tx.lock().await.is_closed() {
+                                self.send_close_frame().await?;
                             }
+                            break;
                         }
                         OpCode::Ping => {
                             self.send_pong_frame(frame.payload).await?;
