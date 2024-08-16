@@ -13,7 +13,7 @@ async fn handle_connection(addr: &str) {
 
             loop {
                 select! {
-                    Some(result) = ws_connection.read.recv() => {
+                    Some(result) = ws_connection.buf_reader.recv() => {
                         match result {
                             Ok(frame) => {
                                  println!("Received message: {}", &String::from_utf8(frame.payload).unwrap());

@@ -1,0 +1,11 @@
+{
+   "socket-flow": {
+      "1.1.1": {
+         "behavior": "FAILED",
+         "behaviorClose": "UNCLEAN",
+         "duration": 52,
+         "remoteCloseCode": null,
+         "reportfile": "socket_flow_case_1_1_1.json"
+      }
+   }
+}

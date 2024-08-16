@@ -1,40 +1,15 @@
-use crate::error::Error;
-use crate::frame::{Frame, OpCode};
+use crate::frame::Frame;
 use std::io;
-use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc::Receiver;
+use tokio::io::{AsyncWriteExt, WriteHalf};
+use tokio::net::TcpStream;
 
-pub struct WriteStream<W: AsyncWriteExt + Unpin> {
-    pub write: W,
-    broadcast_rx: Receiver<Frame>,
+pub struct Writer {
+    write_half: WriteHalf<TcpStream>,
 }
 
-impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
-    pub fn new(write: W, broadcast_rx: Receiver<Frame>) -> Self {
-        Self {
-            write,
-            broadcast_rx,
-        }
-    }
-
-    pub async fn run(&mut self) -> Result<(), Error> {
-        loop {
-            tokio::select! {
-                broadcast_data = self.broadcast_rx.recv() => {
-                    match broadcast_data {
-                        Some(data) => {
-                            let data_clone = data.clone();
-                            self.write_frame(data).await?;
-                            if data_clone.opcode == OpCode::Close {
-                                 break;
-                            }
-                        },
-                        None => break
-                    }
-                }
-            }
-        }
-        Ok(())
+impl Writer {
+    pub fn new(write_half: WriteHalf<TcpStream>) -> Self {
+        Self { write_half }
     }
 
     pub async fn write_frame(&mut self, frame: Frame) -> io::Result<()> {
@@ -46,19 +21,19 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
         let first_byte = (frame.final_fragment as u8) << 7 | frame.opcode.as_u8();
         let payload_len = frame.payload.len();
 
-        self.write.write_all(&[first_byte]).await?;
+        self.write_half.write_all(&[first_byte]).await?;
 
         // According to Websockets RFC, if the payload length is less or equal 125, it's written as a 8-bit unsigned integer
         // if it's between 126 and 65535, it's represented by additional 8 bytes.
         if payload_len <= 125 {
-            self.write.write_all(&[payload_len as u8]).await?;
+            self.write_half.write_all(&[payload_len as u8]).await?;
         } else if payload_len <= 65535 {
-            self.write
+            self.write_half
                 .write_all(&[126, (payload_len >> 8) as u8, payload_len as u8])
                 .await?;
         } else {
             let bytes = payload_len.to_be_bytes();
-            self.write
+            self.write_half
                 .write_all(&[
                     127, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
                     bytes[7],
@@ -66,7 +41,7 @@ impl<W: AsyncWriteExt + Unpin> WriteStream<W> {
                 .await?;
         }
 
-        self.write.write_all(&frame.payload).await?;
+        self.write_half.write_all(&frame.payload).await?;
 
         Ok(())
     }

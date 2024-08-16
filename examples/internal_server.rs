@@ -1,31 +1,27 @@
+use futures::StreamExt;
 use log::*;
 use socket_flow::handshake::accept_async;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::select;
 
 async fn handle_connection(_: SocketAddr, stream: TcpStream) {
     match accept_async(stream).await {
-        Ok(mut ws_connection) => loop {
-            select! {
-                Some(result) = ws_connection.read.recv() => {
-                    match result {
-                        Ok(frame) => {
-                            println!("received opcode: {:?}", frame.opcode);
-                            if ws_connection.send_frame(frame).await.is_err() {
-                                eprintln!("Failed to send message");
-                                break;
-                            }
-                        }
-                        Err(err) => {
-                            eprintln!("Received error from the stream: {}", err);
+        Ok(mut ws_connection) => {
+            while let Some(result) = ws_connection.next().await {
+                match result {
+                    Ok(frame) => {
+                        if ws_connection.send_frame(frame).await.is_err() {
+                            eprintln!("Failed to send message");
                             break;
                         }
                     }
+                    Err(e) => {
+                        eprintln!("Received error from the stream: {}", e);
+                        break;
+                    }
                 }
-                else => break
             }
-        },
+        }
         Err(err) => eprintln!("Error when performing handshake: {}", err),
     }
 }

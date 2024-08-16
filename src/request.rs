@@ -1,5 +1,5 @@
-use url::Url;
 use crate::error::Error;
+use url::Url;
 
 // Function used for client connection, parsing the ws/wss URL to http, for constructing the
 // handshake request, which includes the sec-websockets-key, the URL path, scheme and another relevant
@@ -14,7 +14,11 @@ pub fn parse_to_http_request(ws_url: &str, key: &str) -> Result<(String, String)
     };
 
     let host_with_port = match parsed_url.port() {
-        Some(port) => format!("{}:{}", parsed_url.host_str().ok_or(Error::URLNoHost)?, port),
+        Some(port) => format!(
+            "{}:{}",
+            parsed_url.host_str().ok_or(Error::URLNoHost)?,
+            port
+        ),
         None => return Err(Error::URLNoPort),
     };
 

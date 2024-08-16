@@ -10,7 +10,7 @@ async fn run_test(case: u32) -> Result<(), Error> {
     info!("Running test case {}", case);
     let case_url = &format!("ws://127.0.0.1:9001/runCase?case={}&agent={}", case, AGENT);
     let mut connection = connect_async(case_url).await?;
-    while let Some(msg) = connection.read.recv().await {
+    while let Some(msg) = connection.buf_reader.recv().await {
         let msg = msg?;
         if msg.opcode == OpCode::Text || msg.opcode == OpCode::Binary {
             connection.send_frame(msg).await?;
@@ -25,22 +25,24 @@ async fn update_reports() -> Result<(), Error> {
     let mut connection = connect_async(&format!(
         "ws://127.0.0.1:9001/updateReports?agent={}",
         AGENT
-    )).await?;
+    ))
+    .await?;
     println!("closing connection");
     connection.close_connection().await?;
     Ok(())
 }
 
 async fn get_case_count() -> Result<u32, Error> {
-
     let mut connection = connect_async("ws://localhost:9001/getCaseCount").await?;
 
     // Receive a single message
-    let msg = connection.read.recv().await.unwrap()?;
+    let msg = connection.buf_reader.recv().await.unwrap()?;
     connection.close_connection().await?;
 
     let text_message = String::from_utf8(msg.payload)?;
-    Ok(text_message.parse::<u32>().expect("couldn't convert test case to number"))
+    Ok(text_message
+        .parse::<u32>()
+        .expect("couldn't convert test case to number"))
 }
 
 #[tokio::main]
@@ -51,8 +53,7 @@ async fn main() {
 
     for case in 1..=total {
         if let Err(e) = run_test(case).await {
-           error!("Testcase {} failed: {}", case, e)
-
+            error!("Testcase {} failed: {}", case, e)
         }
     }
 

@@ -1,0 +1,78 @@
+{
+   "agent": "socket-flow",
+   "behavior": "FAILED",
+   "behaviorClose": "FAILED",
+   "case": 435,
+   "closedByMe": false,
+   "createStats": true,
+   "createWirelog": false,
+   "description": "Send 1000 compressed messages each of payload size 32768, auto-fragment to 0 octets. Use permessage-deflate client offers (requestNoContextTakeover, requestMaxWindowBits): [(False, 9)]",
+   "droppedByMe": false,
+   "duration": 8,
+   "expectation": "Receive echo'ed messages (with payload as sent). Timeout case after 480 secs.",
+   "expected": {},
+   "expectedClose": {
+      "closeCode": [
+         1000
+      ],
+      "closedByMe": true,
+      "requireClean": true
+   },
+   "failedByMe": false,
+   "httpRequest": "GET /runCase?case=435&agent=socket-flow HTTP/1.1\r\nHost: 127.0.0.1:9001\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: ZfpvdiwDvJrPLcCbY1t6Mw==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\r\n",
+   "httpResponse": "HTTP/1.1 101 Switching Protocols\r\nServer: AutobahnTestSuite/0.8.2-0.10.9\r\nX-Powered-By: AutobahnPython/0.10.9\r\nUpgrade: WebSocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: RId9GXeipGS/CRaNMeJ4T8eQ3z8=\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=9\r\n\r\n",
+   "id": "13.3.8",
+   "isServer": true,
+   "localCloseCode": null,
+   "localCloseReason": null,
+   "received": [],
+   "remoteCloseCode": null,
+   "remoteCloseReason": null,
+   "reportCompressionRatio": true,
+   "reportTime": true,
+   "result": "Case did not finish within 480 seconds.",
+   "resultClose": "The connection was failed by the wrong endpoint",
+   "rxFrameStats": {},
+   "rxOctetStats": {
+      "257": 1
+   },
+   "started": "2024-08-15T21:49:44.139Z",
+   "trafficStats": null,
+   "txFrameStats": {
+      "1": 1
+   },
+   "txOctetStats": {
+      "278": 1,
+      "1477": 1
+   },
+   "wasClean": false,
+   "wasCloseHandshakeTimeout": false,
+   "wasNotCleanReason": "peer dropped the TCP connection without previous WebSocket closing handshake",
+   "wasOpenHandshakeTimeout": false,
+   "wasServerConnectionDropTimeout": false,
+   "wirelog": [
+      [
+         "RO",
+         [
+            257,
+            "474554202f72756e436173653f636173653d343335266167656e743d736f636b65742d666c6f7720485454502f312e310d0a486f73743a203132372e302e302e ..."
+         ]
+      ],
+      [
+         "TO",
+         [
+            278,
+            "485454502f312e312031303120537769746368696e672050726f746f636f6c730d0a5365727665723a204175746f6261686e5465737453756974652f302e382e ..."
+         ],
+         false
+      ],
+      [
+         "WLM",
+         false
+      ],
+      [
+         "TI",
+         480
+      ]
+   ]
+}
