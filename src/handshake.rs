@@ -65,8 +65,7 @@ async fn second_stage_handshake(
     // let stream_writer = writer_arc.clone();
     // let read_stream = ReadStream::new(buf_reader, stream_writer);
 
-    let writer = Writer::new(write_half);
-    let ws_connection = WSConnection::new(buf_reader, writer);
+    let ws_connection = WSConnection::new(buf_reader, write_half);
 
     // We are spawning poll_messages which is the method for reading the frames from the socket
     // we need to do it concurrently, because we need this method running, while the end-user can have

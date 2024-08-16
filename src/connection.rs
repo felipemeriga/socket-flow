@@ -8,12 +8,11 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::time::{sleep, timeout};
-use crate::write::Writer;
 
 // const CLOSE_TIMEOUT: u64 = 5;
 pub struct WSConnection {
     buf_reader: BufReader<ReadHalf<TcpStream>>,
-    writer: Writer,
+    write_half: WriteHalf<TcpStream>,
     fragmented_message: Option<FragmentedMessage>,
 }
 
@@ -91,11 +90,11 @@ impl Stream for WSConnection {
 }
 
 impl WSConnection {
-    pub fn new(read: BufReader<ReadHalf<TcpStream>>, writer: Writer) -> Self {
+    pub fn new(read: BufReader<ReadHalf<TcpStream>>, write_half: WriteHalf<TcpStream>) -> Self {
         let fragmented_message = None;
         Self {
             buf_reader: read,
-            writer,
+            write_half,
             fragmented_message,
         }
     }
@@ -106,7 +105,7 @@ impl WSConnection {
     // through the socket, and waits until it receives the confirmation in a channel
     // executing it inside a timeout, to avoid a long waiting time
     pub async fn close_connection(&mut self) -> Result<(), io::Error> {
-        self.writer.write_frame(Frame::new(true, OpCode::Close, Vec::new()))
+        self.write_frame(Frame::new(true, OpCode::Close, Vec::new()))
             .await?;
 
         sleep(Duration::from_secs(5)).await;
@@ -121,18 +120,18 @@ impl WSConnection {
 
     // This function can be used to send any frame, with a specific payload through the socket
     pub async fn send_frame(&mut self, frame: Frame) -> std::io::Result<()> {
-        self.writer.write_frame(frame).await
+        self.write_frame(frame).await
     }
 
     // This function will be used to send general data as a Vector of bytes, and by default will
     // be sent as a text opcode
     pub async fn send_data(&mut self, data: Vec<u8>) -> std::io::Result<()> {
-        self.writer.write_frame(Frame::new(true, OpCode::Text, data)).await
+        self.write_frame(Frame::new(true, OpCode::Text, data)).await
     }
 
     // It will send a ping frame through the socket
     pub async fn send_ping(&mut self) -> std::io::Result<()> {
-        self.writer.write_frame(Frame::new(true, OpCode::Ping, Vec::new()))
+        self.write_frame(Frame::new(true, OpCode::Ping, Vec::new()))
             .await
     }
 
@@ -156,7 +155,7 @@ impl WSConnection {
                 OpCode::Continue
             };
 
-            self.writer.write_frame(Frame::new(is_final, opcode, Vec::from(chunk)))
+            self.write_frame(Frame::new(is_final, opcode, Vec::from(chunk)))
                 .await?
         }
 
@@ -165,7 +164,7 @@ impl WSConnection {
 
     async fn send_pong_frame(&mut self, payload: Vec<u8>) -> std::io::Result<()> {
         let pong_frame = Frame::new(true, OpCode::Pong, payload);
-        self.writer.write_frame(pong_frame).await
+        self.write_frame(pong_frame).await
     }
 
     pub async fn read_frame(&mut self) -> Result<Frame, Error> {
@@ -274,7 +273,41 @@ impl WSConnection {
     }
 
     pub async fn send_close_frame(&mut self) -> std::io::Result<()> {
-        self.writer.write_frame(Frame::new(true, OpCode::Close, Vec::new()))
+        self.write_frame(Frame::new(true, OpCode::Close, Vec::new()))
             .await
+    }
+
+    pub async fn write_frame(&mut self, frame: Frame) -> io::Result<()> {
+        // The first byte of a websockets frame contains the final fragment bit, and the OpCode
+        // in (frame.final_fragment as u8) << 7 we are doing a left bitwise shift, if final_fragment is true
+        // it will be converted from 10000000 to 1
+        // after that it will perform a bitwise OR operation with OpCode, so if Opcode is text(0x1)
+        // the final result will be 10000001, which is 129 decimal
+        let first_byte = (frame.final_fragment as u8) << 7 | frame.opcode.as_u8();
+        let payload_len = frame.payload.len();
+
+        self.write_half.write_all(&[first_byte]).await?;
+
+        // According to Websockets RFC, if the payload length is less or equal 125, it's written as a 8-bit unsigned integer
+        // if it's between 126 and 65535, it's represented by additional 8 bytes.
+        if payload_len <= 125 {
+            self.write_half.write_all(&[payload_len as u8]).await?;
+        } else if payload_len <= 65535 {
+            self.write_half
+                .write_all(&[126, (payload_len >> 8) as u8, payload_len as u8])
+                .await?;
+        } else {
+            let bytes = payload_len.to_be_bytes();
+            self.write_half
+                .write_all(&[
+                    127, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
+                    bytes[7],
+                ])
+                .await?;
+        }
+
+        self.write_half.write_all(&frame.payload).await?;
+
+        Ok(())
     }
 }
