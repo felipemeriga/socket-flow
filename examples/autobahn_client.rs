@@ -1,3 +1,4 @@
+use futures::StreamExt;
 use log::*;
 use socket_flow::error::Error;
 use socket_flow::frame::{Frame, OpCode};
@@ -10,7 +11,7 @@ async fn run_test(case: u32) -> Result<(), Error> {
     info!("Running test case {}", case);
     let case_url = &format!("ws://127.0.0.1:9001/runCase?case={}&agent={}", case, AGENT);
     let mut connection = connect_async(case_url).await?;
-    while let Some(msg) = connection.buf_reader.recv().await {
+    while let Some(msg) = connection.next().await {
         let msg = msg?;
         if msg.opcode == OpCode::Text || msg.opcode == OpCode::Binary {
             connection.send_frame(msg).await?;
@@ -36,7 +37,7 @@ async fn get_case_count() -> Result<u32, Error> {
     let mut connection = connect_async("ws://localhost:9001/getCaseCount").await?;
 
     // Receive a single message
-    let msg = connection.buf_reader.recv().await.unwrap()?;
+    let msg = connection.next().await.unwrap()?;
     connection.close_connection().await?;
 
     let text_message = String::from_utf8(msg.payload)?;

@@ -11,18 +11,18 @@ async fn handle_connection(_: SocketAddr, stream: TcpStream) {
                 match result {
                     Ok(frame) => {
                         if ws_connection.send_frame(frame).await.is_err() {
-                            eprintln!("Failed to send message");
+                            error!("Failed to send message");
                             break;
                         }
                     }
                     Err(e) => {
-                        eprintln!("Received error from the stream: {}", e);
+                        error!("Received error from the stream: {}", e);
                         break;
                     }
                 }
             }
         }
-        Err(err) => eprintln!("Error when performing handshake: {}", err),
+        Err(err) => error!("Error when performing handshake: {}", err),
     }
 }
 

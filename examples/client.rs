@@ -1,3 +1,4 @@
+use futures::StreamExt;
 use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
 use socket_flow::handshake::connect_async;
@@ -13,7 +14,7 @@ async fn handle_connection(addr: &str) {
 
             loop {
                 select! {
-                    Some(result) = ws_connection.buf_reader.recv() => {
+                    Some(result) = ws_connection.next() => {
                         match result {
                             Ok(frame) => {
                                  println!("Received message: {}", &String::from_utf8(frame.payload).unwrap());
@@ -28,6 +29,7 @@ async fn handle_connection(addr: &str) {
                             }
                             Err(err) => {
                                 eprintln!("Received error from the stream: {}", err);
+
                                 break;
                             }
                         }
@@ -50,7 +52,7 @@ async fn handle_connection(addr: &str) {
 
 #[tokio::main]
 async fn main() {
-    handle_connection("ws://127.0.0.1:9002").await;
+    handle_connection("ws://127.0.0.1:8080/echo").await;
 }
 
 fn generate_random_string() -> String {
