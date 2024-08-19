@@ -48,34 +48,31 @@ socket-flow = "*"
 Here is a ping-pong server example, that you can also find in: [Example](./examples/internal_server.rs)
 
 ```rust
+use futures::StreamExt;
 use log::*;
-use socket_flow::handshake::perform_handshake;
+use socket_flow::handshake::accept_async;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::select;
 
 async fn handle_connection(_: SocketAddr, stream: TcpStream) {
-    match perform_handshake(stream).await {
-        Ok(mut ws_connection) => loop {
-            select! {
-                Some(result) = ws_connection.read.recv() => {
-                    match result {
-                        Ok(message) => {
-                            if ws_connection.send_data(message).await.is_err() {
-                                eprintln!("Failed to send message");
-                                break;
-                            }
-                        }
-                        Err(err) => {
-                            eprintln!("Received error from the stream: {}", err);
+    match accept_async(stream).await {
+        Ok(mut ws_connection) => {
+            while let Some(result) = ws_connection.next().await {
+                match result {
+                    Ok(frame) => {
+                        if ws_connection.send_frame(frame).await.is_err() {
+                            error!("Failed to send message");
                             break;
                         }
                     }
+                    Err(e) => {
+                        error!("Received error from the stream: {}", e);
+                        break;
+                    }
                 }
-                else => break
             }
-        },
-        Err(err) => eprintln!("Error when performing handshake: {}", err),
+        }
+        Err(err) => error!("Error when performing handshake: {}", err),
     }
 }
 

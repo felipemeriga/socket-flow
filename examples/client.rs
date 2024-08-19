@@ -52,7 +52,7 @@ async fn handle_connection(addr: &str) {
 
 #[tokio::main]
 async fn main() {
-    handle_connection("ws://127.0.0.1:8080/echo").await;
+    handle_connection("ws://127.0.0.1:9002").await;
 }
 
 fn generate_random_string() -> String {
