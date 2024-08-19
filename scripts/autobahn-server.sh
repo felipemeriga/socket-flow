@@ -12,16 +12,16 @@ function cleanup() {
 trap cleanup TERM EXIT
 
 function test_diff() {
-    jq -S 'del(."socket-flow" | .. | .duration?)' 'autobahn/expected-results.json' >> jq-expected.json
-    jq -S 'del(."socket-flow" | .. | .duration?)' 'autobahn/server/index.json' >> jq-index.json
+    jq -S 'del(."socket-flow" | .. | .duration?)' 'autobahn/expected-results-server.json' >> jq-server-expected.json
+    jq -S 'del(."socket-flow" | .. | .duration?)' 'autobahn/server/index.json' >> jq-server-index.json
 
     # Compare files
-    if diff -q "jq-expected.json" "jq-index.json" >/dev/null 2>&1
+    if diff -q "jq-server-expected.json" "jq-server-index.json" >/dev/null 2>&1
     then
         echo "Files are the same"
     else
         echo "Files are different"
-        diff "jq-expected.json" "jq-index.json"
+        diff "jq-server-expected.json" "jq-server-index.json"
         exit 64
     fi
 }

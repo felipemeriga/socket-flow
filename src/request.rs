@@ -31,7 +31,7 @@ pub fn parse_to_http_request(ws_url: &str, key: &str) -> Result<(String, String)
     // and considering everything is bits into the TCP packets, we simply manipulate the string, and
     // convert it to bytes when sending to the server
     let request = format!(
-        "GET {} {}/1.1\r\nHost: {}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\r\n",
+        "GET {} {}/1.1\r\nHost: {}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Extensions: client_max_window_bits\r\n\r\n",
         request_path,
         http_scheme.to_uppercase(),
         host_with_port,

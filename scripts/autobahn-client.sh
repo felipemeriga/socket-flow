@@ -13,12 +13,16 @@ function cleanup() {
 trap cleanup TERM EXIT
 
 function test_diff() {
-    if ! diff -q \
-        <(jq -S 'del(."Tungstenite" | .. | .duration?)' 'autobahn/expected-results.json') \
-        <(jq -S 'del(."Tungstenite" | .. | .duration?)' 'autobahn/client/index.json')
+    jq -S 'del(."socket-flow" | .. | .duration?)' 'autobahn/expected-results-client.json' >> jq-client-expected.json
+    jq -S 'del(."socket-flow" | .. | .duration?)' 'autobahn/client/index.json' >> jq-client-index.json
+
+    # Compare files
+    if diff -q "jq-client-expected.json" "jq-client-index.json" >/dev/null 2>&1
     then
-        echo 'Difference in results, either this is a regression or' \
-             'one should update autobahn/expected-results.json with the new results.'
+        echo "Files are the same"
+    else
+        echo "Files are different"
+        diff "jq-client-expected.json" "jq-client-index.json"
         exit 64
     fi
 }

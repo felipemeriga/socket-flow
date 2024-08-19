@@ -61,6 +61,7 @@ impl Writer {
         Ok(())
     }
 
+    // TODO - Add comments
     pub async fn write_frame_client(&mut self, frame: Frame) -> Result<(), Error> {
         let mut rng = StdRng::from_rng(rand::thread_rng());
         let mask = [

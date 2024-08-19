@@ -1,9 +1,8 @@
 use futures::StreamExt;
 use log::*;
 use socket_flow::error::Error;
-use socket_flow::frame::{Frame, OpCode};
+use socket_flow::frame::{OpCode};
 use socket_flow::handshake::connect_async;
-use tokio::net::TcpStream;
 
 const AGENT: &str = "socket-flow";
 
