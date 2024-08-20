@@ -1,7 +1,6 @@
 use futures::StreamExt;
 use log::*;
 use socket_flow::error::Error;
-use socket_flow::frame::{OpCode};
 use socket_flow::handshake::connect_async;
 
 const AGENT: &str = "socket-flow";
@@ -12,9 +11,7 @@ async fn run_test(case: u32) -> Result<(), Error> {
     let mut connection = connect_async(case_url).await?;
     while let Some(msg) = connection.next().await {
         let msg = msg?;
-        if msg.opcode == OpCode::Text || msg.opcode == OpCode::Binary {
-            connection.send_frame(msg).await?;
-        }
+        connection.send_message(msg).await?;
     }
 
     Ok(())
@@ -39,7 +36,7 @@ async fn get_case_count() -> Result<u32, Error> {
     let msg = connection.next().await.unwrap()?;
     connection.close_connection().await?;
 
-    let text_message = String::from_utf8(msg.payload)?;
+    let text_message = msg.as_text()?;
     Ok(text_message
         .parse::<u32>()
         .expect("couldn't convert test case to number"))

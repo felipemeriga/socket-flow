@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::frame::{Frame, OpCode};
+use crate::message::Message;
 use crate::write::Writer;
 use futures::Stream;
 use std::pin::Pin;
@@ -13,7 +14,7 @@ use tokio_stream::wrappers::ReceiverStream;
 // const CLOSE_TIMEOUT: u64 = 5;
 pub struct WSConnection {
     writer: Arc<Mutex<Writer>>,
-    read_rx: ReceiverStream<Result<Frame, Error>>,
+    read_rx: ReceiverStream<Result<Message, Error>>,
 }
 
 // WSConnection has the read_rx attribute, which is already a ReceiverStream
@@ -21,7 +22,7 @@ pub struct WSConnection {
 // Therefore, implementing Stream for this struct is necessary, so end-user could
 // invoke next() and other stream methods directly from a variable that holds this struct.
 impl Stream for WSConnection {
-    type Item = Result<Frame, Error>;
+    type Item = Result<Message, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         // We need to get a mutable reference to the inner field
@@ -36,7 +37,7 @@ impl Stream for WSConnection {
 impl WSConnection {
     pub fn new(
         write_half: Arc<Mutex<Writer>>,
-        read_rx: ReceiverStream<Result<Frame, Error>>,
+        read_rx: ReceiverStream<Result<Message, Error>>,
     ) -> Self {
         Self {
             writer: write_half,
@@ -63,15 +64,19 @@ impl WSConnection {
         // }
     }
 
-    // This function can be used to send any frame, with a specific payload through the socket
-    pub async fn send_frame(&mut self, frame: Frame) -> Result<(), Error> {
-        self.write_frame(frame).await
+    pub async fn send_message(&mut self, message: Message) -> Result<(), Error> {
+        self.write_frame(message.to_frame(true)).await
     }
 
     // This function will be used to send general data as a Vector of bytes, and by default will
     // be sent as a text opcode
-    pub async fn send_data(&mut self, data: Vec<u8>) -> Result<(), Error> {
+    pub async fn send(&mut self, data: Vec<u8>) -> Result<(), Error> {
         self.write_frame(Frame::new(true, OpCode::Text, data)).await
+    }
+
+    pub async fn send_as_binary(&mut self, data: Vec<u8>) -> Result<(), Error> {
+        self.write_frame(Frame::new(true, OpCode::Binary, data))
+            .await
     }
 
     // It will send a ping frame through the socket

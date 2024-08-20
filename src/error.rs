@@ -70,6 +70,9 @@ pub enum Error {
     #[error("Invalid continuation frame: no fragmented message to continue")]
     InvalidContinuationFrame,
 
+    #[error("Invalid Opcode")]
+    InvalidOpcode,
+
     // HTTP Errors
     #[error("{source}")]
     URLParseError {

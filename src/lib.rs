@@ -11,8 +11,9 @@
 
 mod connection;
 pub mod error;
-pub mod frame;
+mod frame;
 pub mod handshake;
+pub mod message;
 mod read;
 mod request;
 mod write;

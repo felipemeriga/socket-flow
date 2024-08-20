@@ -1,4 +1,4 @@
-use std::io::{Error, ErrorKind};
+use crate::error::Error;
 
 pub const MAX_PAYLOAD_SIZE: usize = 16 * 1024 * 1024; // 16MB
 #[derive(Debug, Clone, PartialEq)]
@@ -21,7 +21,7 @@ impl OpCode {
             0x8 => Ok(OpCode::Close),
             0x9 => Ok(OpCode::Ping),
             0xA => Ok(OpCode::Pong),
-            _ => Err(Error::new(ErrorKind::InvalidInput, "Invalid Opcode")),
+            _ => Err(Error::InvalidOpcode),
         }
     }
 

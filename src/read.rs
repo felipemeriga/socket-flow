@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::frame::{Frame, OpCode, MAX_PAYLOAD_SIZE};
+use crate::message::Message;
 use crate::write::Writer;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, BufReader, ReadHalf};
@@ -17,14 +18,14 @@ pub(crate) struct FragmentedMessage {
 pub struct ReadStream {
     buf_reader: BufReader<ReadHalf<TcpStream>>,
     fragmented_message: Option<FragmentedMessage>,
-    pub read_tx: Sender<Result<Frame, Error>>,
+    pub read_tx: Sender<Result<Message, Error>>,
     writer: Arc<Mutex<Writer>>,
 }
 
 impl ReadStream {
     pub fn new(
         read: BufReader<ReadHalf<TcpStream>>,
-        read_tx: Sender<Result<Frame, Error>>,
+        read_tx: Sender<Result<Message, Error>>,
         writer: Arc<Mutex<Writer>>,
     ) -> Self {
         let fragmented_message = None;
@@ -252,7 +253,7 @@ impl ReadStream {
         }
 
         self.read_tx
-            .send(Ok(frame))
+            .send(Ok(Message::from_frame(frame)?))
             .await
             .map_err(|_| Error::CommunicationError)
     }

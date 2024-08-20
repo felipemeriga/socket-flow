@@ -24,5 +24,7 @@ autobahn/server/
 
 
 # autobahn result files
-jq-expected.json
-jq-index.json
+jq-server-expected.json
+jq-server-index.json
+jq-client-expected.json
+jq-client-index.json

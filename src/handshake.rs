@@ -1,6 +1,6 @@
 use crate::connection::WSConnection;
 use crate::error::Error;
-use crate::frame::Frame;
+use crate::message::Message;
 use crate::read::ReadStream;
 use crate::request::parse_to_http_request;
 use crate::write::{Writer, WriterKind};
@@ -68,7 +68,7 @@ async fn second_stage_handshake(
 
     // ReadStream will be running on a separate task, capturing all the incoming frames from the connection, and broadcasting them through this
     // tokio mpsc channel. Therefore, it can be consumed by the end-user of this library
-    let (read_tx, read_rx) = channel::<std::result::Result<Frame, Error>>(20);
+    let (read_tx, read_rx) = channel::<std::result::Result<Message, Error>>(20);
     let mut read_stream = ReadStream::new(buf_reader, read_tx, stream_writer);
 
     let connection_writer = writer.clone();

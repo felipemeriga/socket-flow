@@ -16,8 +16,8 @@ async fn handle_connection(addr: &str) {
                 select! {
                     Some(result) = ws_connection.next() => {
                         match result {
-                            Ok(frame) => {
-                                 println!("Received message: {}", &String::from_utf8(frame.payload).unwrap());
+                            Ok(message) => {
+                                 println!("Received message: {}", message.as_text().unwrap());
                                 counter = counter + 1;
                                 // close the connection if 3 messages have already been sent and received
                                 if counter >= 3 {
@@ -38,7 +38,7 @@ async fn handle_connection(addr: &str) {
                         let random_string = generate_random_string();
                         let binary_data = Vec::from(random_string);
 
-                        if ws_connection.send_data(binary_data).await.is_err() {
+                        if ws_connection.send(binary_data).await.is_err() {
                             eprintln!("Failed to send message");
                             break;
                         }

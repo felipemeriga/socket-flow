@@ -9,8 +9,8 @@ async fn handle_connection(_: SocketAddr, stream: TcpStream) {
         Ok(mut ws_connection) => {
             while let Some(result) = ws_connection.next().await {
                 match result {
-                    Ok(frame) => {
-                        if ws_connection.send_frame(frame).await.is_err() {
+                    Ok(message) => {
+                        if ws_connection.send_message(message).await.is_err() {
                             error!("Failed to send message");
                             break;
                         }
