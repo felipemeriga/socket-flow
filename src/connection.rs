@@ -44,12 +44,11 @@ impl WSConnection {
         }
     }
 
-    // TODO - Refactor how we are handling closes
-    // This function will be used for closing the connection between two instances, mainly it will
-    // be used by a client,
-    // to request disconnection with a server.It first sends a close frame
-    // through the socket, and waits until it receives the confirmation in a channel
-    // executing it inside a timeout, to avoid a long waiting time
+    /// This function will be used for closing the connection between two instances, mainly it will
+    /// be used by a client,
+    /// to request disconnection with a server.It first sends a close frame
+    /// through the socket, and waits until it receives the confirmation in a channel
+    /// executing it inside a timeout, to avoid a long waiting time
     pub async fn close_connection(&mut self) -> Result<(), Error> {
         self.write_frame(Frame::new(true, OpCode::Close, Vec::new()))
             .await?;

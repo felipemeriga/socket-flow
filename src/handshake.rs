@@ -29,8 +29,11 @@ const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
 
 pub type Result = std::result::Result<WSConnection, Error>;
 
-// This function basically does the first step of verifying the client key in the request
-// going to the second step, which is sending the accept response, and creating the connection
+/// Used for accepting websocket connections as a server.
+///
+/// It basically does the first step of verifying the client key in the request
+/// going to the second step, which is sending the accept response,
+/// finally creating the connection, and returning a `WSConnection`
 pub async fn accept_async(stream: TcpStream) -> Result {
     let (reader, mut write_half) = split(stream);
     let mut buf_reader = BufReader::new(reader);
@@ -93,6 +96,11 @@ async fn second_stage_handshake(
     Ok(ws_connection)
 }
 
+/// Used for connecting as a client to a websocket endpoint.
+///
+/// It basically does the first step of genereating the client key
+/// going to the second step, which is parsing the server reponse,
+/// finally creating the connection, and returning a `WSConnection`
 pub async fn connect_async(addr: &str) -> Result {
     let client_websocket_key = generate_websocket_key();
     let (request, hostname) = parse_to_http_request(addr, &client_websocket_key)?;
