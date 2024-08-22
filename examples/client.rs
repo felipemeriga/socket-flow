@@ -1,12 +1,13 @@
+use futures::StreamExt;
+use log::*;
 use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
-use socket_flow::handshake::perform_client_handshake;
-use tokio::net::TcpStream;
+use socket_flow::handshake::connect_async;
 use tokio::select;
 use tokio::time::{interval, Duration};
 
-async fn handle_connection(stream: TcpStream) {
-    match perform_client_handshake(stream).await {
+async fn handle_connection(addr: &str) {
+    match connect_async(addr).await {
         Ok(mut ws_connection) => {
             let mut ticker = interval(Duration::from_secs(5));
             // it will be used for closing the connection
@@ -14,21 +15,22 @@ async fn handle_connection(stream: TcpStream) {
 
             loop {
                 select! {
-                    Some(result) = ws_connection.read.recv() => {
+                    Some(result) = ws_connection.next() => {
                         match result {
-                            Ok(frame) => {
-                                 println!("Received message: {}", &String::from_utf8(frame.payload).unwrap());
+                            Ok(message) => {
+                                 info!("Received message: {}", message.as_text().unwrap());
                                 counter = counter + 1;
                                 // close the connection if 3 messages have already been sent and received
                                 if counter >= 3 {
                                     if ws_connection.close_connection().await.is_err() {
-                                         eprintln!("Error occurred when closing connection");
+                                         error!("Error occurred when closing connection");
                                     }
                                     break;
                                 }
                             }
                             Err(err) => {
-                                eprintln!("Received error from the stream: {}", err);
+                                error!("Received error from the stream: {}", err);
+
                                 break;
                             }
                         }
@@ -37,7 +39,7 @@ async fn handle_connection(stream: TcpStream) {
                         let random_string = generate_random_string();
                         let binary_data = Vec::from(random_string);
 
-                        if ws_connection.send_data(binary_data).await.is_err() {
+                        if ws_connection.send(binary_data).await.is_err() {
                             eprintln!("Failed to send message");
                             break;
                         }
@@ -45,17 +47,14 @@ async fn handle_connection(stream: TcpStream) {
                 }
             }
         }
-        Err(err) => eprintln!("Error when performing handshake: {}", err),
+        Err(err) => error!("Error when performing handshake: {}", err),
     }
 }
 
 #[tokio::main]
 async fn main() {
-    let stream = TcpStream::connect("127.0.0.1:9002")
-        .await
-        .expect("Couldn't connect to the server");
-
-    handle_connection(stream).await;
+    env_logger::init();
+    handle_connection("ws://127.0.0.1:9002").await;
 }
 
 fn generate_random_string() -> String {

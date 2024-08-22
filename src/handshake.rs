@@ -1,19 +1,21 @@
 use crate::connection::WSConnection;
-use crate::error::{HandshakeError, StreamError};
-use crate::frame::Frame;
-use crate::read::{ReadStream, StreamKind};
-use crate::write::WriteStream;
+use crate::error::Error;
+use crate::message::Message;
+use crate::read::ReadStream;
+use crate::request::parse_to_http_request;
+use crate::write::{Writer, WriterKind};
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
 use bytes::BytesMut;
 use rand::random;
 use sha1::{Digest, Sha1};
 use std::sync::Arc;
-use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::io::{split, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
+use tokio_stream::wrappers::ReceiverStream;
 
 const SEC_WEBSOCKETS_KEY: &str = "Sec-WebSocket-Key:";
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -25,22 +27,15 @@ const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Sec-WebSocket-Accept: {}\r\n\
         \r\n";
 
-const HTTP_HANDSHAKE_REQUEST: &str = "GET / HTTP/1.1\r\n\
-        Host: {host}\r\n\
-        Connection: Upgrade\r\n\
-        Upgrade: websocket\r\n\
-        Sec-WebSocket-Key: {key}\r\n\
-        Sec-WebSocket-Version: 13\r\n\
-        Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\
-        \r\n";
-pub type Result = std::result::Result<WSConnection, HandshakeError>;
+pub type Result = std::result::Result<WSConnection, Error>;
 
-// Using Send trait because we are going to run the process to read frames from the socket concurrently
-// TCPStream from tokio implements Send
-// Using static, because tokio::spawn returns a JoinHandle, because the spawned task could outilive the
-// lifetime of the function call to tokio::spawn.
-pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(stream: T) -> Result {
-    let (reader, mut writer) = split(stream);
+/// Used for accepting websocket connections as a server.
+///
+/// It basically does the first step of verifying the client key in the request
+/// going to the second step, which is sending the accept response,
+/// finally creating the connection, and returning a `WSConnection`
+pub async fn accept_async(stream: TcpStream) -> Result {
+    let (reader, mut write_half) = split(stream);
     let mut buf_reader = BufReader::new(reader);
 
     let sec_websockets_accept = header_read(&mut buf_reader).await;
@@ -48,94 +43,79 @@ pub async fn perform_handshake<T: AsyncRead + AsyncWrite + Send + 'static>(strea
     match sec_websockets_accept {
         Some(accept_value) => {
             let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_value);
-            writer
+            write_half
                 .write_all(response.as_bytes())
                 .await
-                .map_err(|source| HandshakeError::IOError { source })?
+                .map_err(|source| Error::IOError { source })?;
+            write_half.flush().await?;
         }
-        None => Err(HandshakeError::NoSecWebsocketKey)?,
+        None => Err(Error::NoSecWebsocketKey)?,
     }
 
-    second_stage_handshake(StreamKind::Server, buf_reader, writer).await
+    second_stage_handshake(buf_reader, write_half, WriterKind::Server).await
 }
 
-async fn second_stage_handshake<
-    R: AsyncReadExt + Send + Unpin + 'static,
-    W: AsyncWriteExt + Send + Unpin + 'static,
->(
-    kind: StreamKind,
-    buf_reader: R,
-    writer: W,
+async fn second_stage_handshake(
+    buf_reader: BufReader<ReadHalf<TcpStream>>,
+    write_half: WriteHalf<TcpStream>,
+    kind: WriterKind,
 ) -> Result {
-    // We are using tokio async channels to communicate the frames received from the client
-    // and another channel to send messages from server to client;
-    // all the callers that are trying to add new data will be blocked
-    // until we have free space
-    // (off course, using await in the method)
-    let (write_tx, write_rx) = channel::<Frame>(20);
-    let write_tx = Arc::new(Mutex::new(write_tx));
+    // This writer instance would be used for writing frames into the socket.
+    // Since it's going to be used by two different instances, we need to wrap it through an Arc
+    let writer = Arc::new(Mutex::new(Writer::new(write_half, kind)));
 
-    let (read_tx, read_rx) = channel::<std::result::Result<Frame, StreamError>>(20);
-    let read_tx = Arc::new(Mutex::new(read_tx));
+    let stream_writer = writer.clone();
 
-    let (close_tx, close_rx) = channel::<bool>(1);
+    // ReadStream will be running on a separate task, capturing all the incoming frames from the connection, and broadcasting them through this
+    // tokio mpsc channel. Therefore, it can be consumed by the end-user of this library
+    let (read_tx, read_rx) = channel::<std::result::Result<Message, Error>>(20);
+    let mut read_stream = ReadStream::new(buf_reader, read_tx, stream_writer);
 
-    let read_tx_stream = read_tx.clone();
-    let write_tx_stream = write_tx.clone();
-    // We are separating the stream in read and write,
-    // because handling them in the same struct would need us to
-    // wrap some references with Arc<mutex>,
-    // and for the sake of a clean syntax, we selected to split it
-    let mut read_stream =
-        ReadStream::new(kind, buf_reader, read_tx_stream, write_tx_stream, close_tx);
-    let mut write_stream = WriteStream::new(writer, write_rx);
+    let connection_writer = writer.clone();
+    // Transforming the receiver of the channel into a Stream, so we could leverage using
+    // next() method, for processing the values from this channel
+    let receiver_stream = ReceiverStream::new(read_rx);
 
-    let write_tx_con = write_tx.clone();
-    let ws_connection = WSConnection::new(read_rx, write_tx_con, close_rx);
+    // The WSConnection is the structure that will be delivered to the end-user, which contains
+    // a stream of frames, for consuming the incoming frames, and methods for writing frames into
+    // the socket
+    let ws_connection = WSConnection::new(connection_writer, receiver_stream);
 
-    let read_tx_r = read_tx.clone();
-    // We are spawning poll_messages which is the method for reading the frames from the socket
-    // we need to do it concurrently, because we need this method running, while the end-user can have
-    // a channel returned, for receiving and sending messages
-    // Since ReadHalf and WriteHalf implements Send and Sync, it's ok to send them over spawn
-    // Additionally, since our BufReader doesn't change, we only call read methods from it, there is no
-    // need to wrap it in an Arc<Mutex>, also because poll_messages read frames sequentially.
-    // Also, since this is the only task that holds the ownership of BufReader, if some IO error happens,
-    // poll_messages will return. Since BufReader is only inside the scope of the function, it will be dropped
-    //  the WriteHalf, hence, the TCP connection
-
+    // Spawning poll_messages which is the method for reading the frames from the socket concurrently,
+    // because we need this method running, while the end-user can have
+    // a connection returned, for receiving and sending messages.
+    // Since this is the only task that holds the ownership of BufReader, if some IO error happens,
+    // poll_messages will return.
+    // BufReader will be dropped, hence, the writeHalf and TCP connection
     tokio::spawn(async move {
         if let Err(err) = read_stream.poll_messages().await {
-            read_tx_r.lock().await.send(Err(err)).await.unwrap();
+            let _ = read_stream.read_tx.send(Err(err)).await;
         }
-    });
-
-    let read_tx_w = read_tx.clone();
-    tokio::spawn(async move {
-        if let Err(err) = write_stream.run().await {
-            read_tx_w.lock().await.send(Err(err)).await.unwrap()
-        }
-        drop(read_tx_w);
     });
 
     Ok(ws_connection)
 }
 
-pub async fn perform_client_handshake(stream: TcpStream) -> Result {
+/// Used for connecting as a client to a websocket endpoint.
+///
+/// It basically does the first step of genereating the client key
+/// going to the second step, which is parsing the server reponse,
+/// finally creating the connection, and returning a `WSConnection`
+pub async fn connect_async(addr: &str) -> Result {
     let client_websocket_key = generate_websocket_key();
-    let request = HTTP_HANDSHAKE_REQUEST
-        .replace("{key}", &client_websocket_key)
-        .replace("{host}", &stream.local_addr().unwrap().to_string());
+    let (request, hostname) = parse_to_http_request(addr, &client_websocket_key)?;
 
-    let (reader, mut writer) = split(stream);
+    let stream = TcpStream::connect(hostname).await?;
+
+    let (reader, mut write_half) = split(stream);
     let mut buf_reader = BufReader::new(reader);
 
-    writer.write_all(request.as_bytes()).await?;
+    write_half.write_all(request.as_bytes()).await?;
 
     // Create a buffer for the server's response, since most of the Websocket won't send a big payload
     // for the handshake response, defining this size of Vector would be enough, and also will put a limit
     // to bigger payloads
-    let mut buffer: Vec<u8> = vec![0; 1024];
+    let mut buffer: Vec<u8> = vec![0; 206];
 
     // Read the server's response
     let number_read = buf_reader.read(&mut buffer).await?;
@@ -148,16 +128,16 @@ pub async fn perform_client_handshake(stream: TcpStream) -> Result {
 
     // Verify that the server agreed to upgrade the connection
     if !response.contains(SWITCHING_PROTOCOLS) {
-        return Err(HandshakeError::NoUpgrade);
+        return Err(Error::NoUpgrade);
     }
 
     // Generate the server expected accept key using UUID, and checking if it's present in the response
     let expected_accept_value = generate_websocket_accept_value(client_websocket_key);
     if !response.contains(&expected_accept_value) {
-        return Err(HandshakeError::InvalidAcceptKey);
+        return Err(Error::InvalidAcceptKey);
     }
 
-    second_stage_handshake(StreamKind::Client, buf_reader, writer).await
+    second_stage_handshake(buf_reader, write_half, WriterKind::Client).await
 }
 
 // Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the

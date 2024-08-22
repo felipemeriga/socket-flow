@@ -20,4 +20,11 @@ Cargo.lock
 http.txt
 
 # Server folder for autobahn testsuite results
-./autobahn/server/
+autobahn/server/
+
+
+# autobahn result files
+jq-server-expected.json
+jq-server-index.json
+jq-client-expected.json
+jq-client-index.json

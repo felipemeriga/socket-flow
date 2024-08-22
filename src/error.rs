@@ -4,26 +4,26 @@ use std::string::FromUtf8Error;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::time::error::Elapsed;
+use url::ParseError;
 
 #[derive(Error, Debug)]
-pub enum CloseError {
+pub enum Error {
+    // Sender / Receiver Errors
     #[error("{source}")]
     SendError {
         #[from]
         source: SendError<Frame>,
     },
 
+    #[error("channel communication error")]
+    CommunicationError,
+
+    // General Errors
     #[error("{source}")]
     Timeout {
         #[from]
         source: Elapsed,
     },
-}
-
-#[derive(Error, Debug)]
-pub enum HandshakeError {
-    #[error("Couldn't find Sec-WebSocket-Key header in the request")]
-    NoSecWebsocketKey,
 
     #[error("IO Error happened: {source}")]
     IOError {
@@ -37,42 +37,30 @@ pub enum HandshakeError {
         source: FromUtf8Error,
     },
 
+    // Handshake Errors
+    #[error("Couldn't find Sec-WebSocket-Key header in the request")]
+    NoSecWebsocketKey,
+
     #[error("Server didn't upgrade the connection")]
     NoUpgrade,
 
     #[error("Sever didn't send a valid Sec-WebSocket-Accept key")]
     InvalidAcceptKey,
-}
 
-#[derive(Error, Debug)]
-pub enum StreamError {
-    #[error("{source}")]
-    IOError {
-        #[from]
-        source: io::Error,
-    },
+    // Framing Errors
+    #[error("RSV not zero")]
+    RSVNotZero,
 
-    #[error("channel communication error")]
-    CommunicationError,
+    #[error("Control frames must not be fragmented")]
+    ControlFramesFragmented,
 
-    #[error("{source}")]
-    InternalSendError {
-        #[from]
-        source: SendError<Frame>,
-    },
+    #[error("Control frame with invalid payload size, can be greater than 125")]
+    ControlFramePayloadSize,
 
-    #[error("{source}")]
-    CloseChannelError {
-        #[from]
-        source: SendError<bool>,
-    },
+    #[error("Payload too large")]
+    PayloadSize,
 
-    #[error("{source}")]
-    UTF8Error {
-        #[from]
-        source: FromUtf8Error,
-    },
-
+    // Fragmentation Errors
     #[error("Invalid frame while there is a fragmented message in progress")]
     InvalidFrameFragmentation,
 
@@ -81,4 +69,23 @@ pub enum StreamError {
 
     #[error("Invalid continuation frame: no fragmented message to continue")]
     InvalidContinuationFrame,
+
+    #[error("Invalid Opcode")]
+    InvalidOpcode,
+
+    // HTTP Errors
+    #[error("{source}")]
+    URLParseError {
+        #[from]
+        source: ParseError,
+    },
+
+    #[error("Invalid scheme in WebSocket URL")]
+    InvalidSchemeURL,
+
+    #[error("URL has no host")]
+    URLNoHost,
+
+    #[error("URL has no port")]
+    URLNoPort,
 }

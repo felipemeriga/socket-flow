@@ -72,3 +72,6 @@ jobs:
 
       - name: Running Autobahn TestSuite for server
         run: ./scripts/autobahn-server.sh
+
+      - name: Running Autobahn TestSuite for client
+        run: ./scripts/autobahn-client.sh

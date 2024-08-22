@@ -1,6 +1,6 @@
 [package]
 name = "socket-flow"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 authors = ["Felipe Meriga <felipe.meriga@gmail.com>"]
 description = "a simple WebSockets implementation, to be used in clients and servers"
@@ -18,6 +18,7 @@ name = "socket_flow"
 path = "src/lib.rs"
 
 [dependencies]
+futures = "0.3.30"
 tokio = { version = "1.38.0", features = ["full"] }
 sha1 = "0.11.0-pre.3"
 bytes = "1.6.0"
@@ -27,12 +28,21 @@ log = "0.4.22"
 env_logger = "0.11.4"
 rand = "0.9.0-alpha.1"
 time = "0.3.36"
+url = "2.5.2"
+tokio-stream = "0.1.15"
+uuid = { version = "1.10.0", features = ["v8"] }
 
 [[example]]
-name = "internal_server"
+name = "echo_server"
 
 [[example]]
 name = "client"
 
 [[example]]
 name = "continue_client"
+
+[[example]]
+name = "autobahn_client"
+
+[[example]]
+name = "simple_server"
