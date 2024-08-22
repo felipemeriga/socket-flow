@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::frame::{Frame, OpCode};
 use crate::message::Message;
+use crate::split::{WSReader, WSWriter};
 use crate::write::Writer;
 use futures::Stream;
 use std::pin::Pin;
@@ -43,6 +44,15 @@ impl WSConnection {
             writer: write_half,
             read_rx,
         }
+    }
+
+    /// This function will split the connection into the `WSReader`, which is a stream of messages
+    /// and `WSWriter`, for writing data into the socket.
+    /// It's a good option when you need to work with both in separate tasks or functions
+    pub fn split(self) -> (WSReader, WSWriter) {
+        let writer = WSWriter::new(self.writer);
+        let reader = WSReader::new(self.read_rx);
+        (reader, writer)
     }
 
     /// This function will be used for closing the connection between two instances, mainly it will

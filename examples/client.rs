@@ -1,4 +1,5 @@
 use futures::StreamExt;
+use log::*;
 use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
 use socket_flow::handshake::connect_async;
@@ -17,18 +18,18 @@ async fn handle_connection(addr: &str) {
                     Some(result) = ws_connection.next() => {
                         match result {
                             Ok(message) => {
-                                 println!("Received message: {}", message.as_text().unwrap());
+                                 info!("Received message: {}", message.as_text().unwrap());
                                 counter = counter + 1;
                                 // close the connection if 3 messages have already been sent and received
                                 if counter >= 3 {
                                     if ws_connection.close_connection().await.is_err() {
-                                         eprintln!("Error occurred when closing connection");
+                                         error!("Error occurred when closing connection");
                                     }
                                     break;
                                 }
                             }
                             Err(err) => {
-                                eprintln!("Received error from the stream: {}", err);
+                                error!("Received error from the stream: {}", err);
 
                                 break;
                             }
@@ -46,12 +47,13 @@ async fn handle_connection(addr: &str) {
                 }
             }
         }
-        Err(err) => eprintln!("Error when performing handshake: {}", err),
+        Err(err) => error!("Error when performing handshake: {}", err),
     }
 }
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     handle_connection("ws://127.0.0.1:9002").await;
 }
 

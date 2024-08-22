@@ -12,7 +12,7 @@ execute all the test cases, and add the output to a folder. Also, you will need 
 provide the container, a configuration file, that states the server hostname and port, the test cases to be executed/ignored,
 and another specs. The configuration file can be found at: [fuzzingclient.json](./autobahn/fuzzingclient.json).
 
-In order to execute the tests, first execute [internal_server](./examples/internal_server.rs), and on a separate tab, execute the 
+In order to execute the tests, first execute [echo_server](./examples/echo_server), and on a separate tab, execute the 
 docker container image(root of this repo):
 
 ```shell

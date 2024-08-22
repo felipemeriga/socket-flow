@@ -30,12 +30,19 @@ rand = "0.9.0-alpha.1"
 time = "0.3.36"
 url = "2.5.2"
 tokio-stream = "0.1.15"
+uuid = { version = "1.10.0", features = ["v8"] }
 
 [[example]]
-name = "internal_server"
+name = "echo_server"
 
 [[example]]
 name = "client"
 
 [[example]]
 name = "continue_client"
+
+[[example]]
+name = "autobahn_client"
+
+[[example]]
+name = "simple_server"

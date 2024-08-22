@@ -45,10 +45,71 @@ Add this in your `Cargo.toml`:
 socket-flow = "*"
 ```
 
-## Example of usage
+## Examples of usage
+
+This repo has different examples and flexible ways of using its dependencies to design the 
+code as end-user needs.
+
+We have the option of configuring all from scratch, creating the TcpListener, and managing the websockets connections,
+and we also have a plug-and-play option, which you can generate a Websockets server, with fewer lines of code.
+
+### Plug and play server
+
+This is a very practical example, because you can have a server with just calling `start_server` function, which returns
+an `EventStream`, for consuming server events, like new connections, messages, errors and disconnections.
+
+```rust
+use futures::StreamExt;
+use log::*;
+use socket_flow::event::{Event, ID};
+use socket_flow::server::start_server;
+use socket_flow::split::WSWriter;
+use std::collections::HashMap;
+
+#[tokio::main]
+async fn main() {
+    env_logger::init();
+
+    let port: u16 = 8080;
+    match start_server(8080).await {
+        Ok(mut event_receiver) => {
+            let mut clients: HashMap<ID, WSWriter> = HashMap::new();
+            info!("Server started on address 127.0.0.1:{}", port);
+            while let Some(event) = event_receiver.next().await {
+                match event {
+                    Event::NewClient(id, client_conn) => {
+                        info!("New client {} connected", id);
+                        clients.insert(id, client_conn);
+                    }
+                    Event::NewMessage(client_id, message) => {
+                        info!("Message from client {}: {:?}", client_id, message);
+                        let ws_writer = clients.get_mut(&client_id).unwrap();
+                        ws_writer.send_message(message).await.unwrap();
+                    }
+                    Event::Disconnect(client_id) => {
+                        info!("Client {} disconnected", client_id);
+                        clients.remove(&client_id);
+                    }
+                    Event::Error(client_id, error) => {
+                        error!("Error occurred for client {}: {:?}", client_id, error);
+                    }
+                }
+            }
+        }
+        Err(err) => {
+            eprintln!("Could not start the server due to: {:?}", err);
+        }
+    }
+}
+```
+
+For running this example, you can clone the repo and execute:
+```shell
+cargo run --color=always --package socket-flow --example simple_server
+```
 
 ### Echo server
-Here is a echo-server example, that you can also find in: [Example](./examples/internal_server.rs)
+Here is a echo-server example, that you can also find in: [Example](./examples/echo_server)
 
 ```rust
 use futures::StreamExt;
@@ -100,7 +161,7 @@ async fn main() {
 
 For running this example, you can clone the repo and execute:
 ```shell
-cargo run --color=always --package socket-flow --example internal_server
+cargo run --color=always --package socket-flow --example echo_server
 ```
 
 This example, creates a TcpListener, binding it to a port, accepting connections, handling each of these connections
@@ -116,6 +177,7 @@ Here is an example of how to run a client, that will perform some operations and
 use futures::StreamExt;
 use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
+use log::*;
 use socket_flow::handshake::connect_async;
 use tokio::select;
 use tokio::time::{interval, Duration};
@@ -131,19 +193,19 @@ async fn handle_connection(addr: &str) {
                 select! {
                     Some(result) = ws_connection.next() => {
                         match result {
-                            Ok(frame) => {
-                                 println!("Received message: {}", &String::from_utf8(frame.payload).unwrap());
+                            Ok(message) => {
+                                 info!("Received message: {}", message.as_text().unwrap());
                                 counter = counter + 1;
                                 // close the connection if 3 messages have already been sent and received
                                 if counter >= 3 {
                                     if ws_connection.close_connection().await.is_err() {
-                                         eprintln!("Error occurred when closing connection");
+                                         error!("Error occurred when closing connection");
                                     }
                                     break;
                                 }
                             }
                             Err(err) => {
-                                eprintln!("Received error from the stream: {}", err);
+                                error!("Received error from the stream: {}", err);
 
                                 break;
                             }
@@ -153,7 +215,7 @@ async fn handle_connection(addr: &str) {
                         let random_string = generate_random_string();
                         let binary_data = Vec::from(random_string);
 
-                        if ws_connection.send_data(binary_data).await.is_err() {
+                        if ws_connection.send(binary_data).await.is_err() {
                             eprintln!("Failed to send message");
                             break;
                         }
@@ -161,12 +223,13 @@ async fn handle_connection(addr: &str) {
                 }
             }
         }
-        Err(err) => eprintln!("Error when performing handshake: {}", err),
+        Err(err) => error!("Error when performing handshake: {}", err),
     }
 }
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     handle_connection("ws://127.0.0.1:9002").await;
 }
 

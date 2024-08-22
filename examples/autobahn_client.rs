@@ -18,13 +18,13 @@ async fn run_test(case: u32) -> Result<(), Error> {
 }
 
 async fn update_reports() -> Result<(), Error> {
-    println!("updating reports");
+    info!("updating reports");
     let mut connection = connect_async(&format!(
         "ws://127.0.0.1:9001/updateReports?agent={}",
         AGENT
     ))
     .await?;
-    println!("closing connection");
+    info!("closing connection");
     connection.close_connection().await?;
     Ok(())
 }
