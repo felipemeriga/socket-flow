@@ -27,10 +27,12 @@ thiserror = "1.0.61"
 log = "0.4.22"
 env_logger = "0.11.4"
 rand = "0.9.0-alpha.1"
+httparse = "1.9.4"
 time = "0.3.36"
 url = "2.5.2"
 tokio-stream = "0.1.15"
 uuid = { version = "1.10.0", features = ["v8"] }
+flate2 = "1.0.32"
 
 [[example]]
 name = "echo_server"

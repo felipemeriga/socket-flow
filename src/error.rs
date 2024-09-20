@@ -1,4 +1,5 @@
 use crate::frame::Frame;
+use httparse::Error as HttpParseError;
 use std::io;
 use std::string::FromUtf8Error;
 use thiserror::Error;
@@ -38,6 +39,18 @@ pub enum Error {
     },
 
     // Handshake Errors
+    #[error("Invalid handshake request method and version")]
+    InvalidHTTPHandshake,
+
+    #[error("Connection: Upgrade header missing in the request")]
+    NoConnectionHeaderPresent,
+
+    #[error("Upgrade: websocket header missing in the request")]
+    NoUpgradeHeaderPresent,
+
+    #[error("Host header missing in the request")]
+    NoHostHeaderPresent,
+
     #[error("Couldn't find Sec-WebSocket-Key header in the request")]
     NoSecWebsocketKey,
 
@@ -88,4 +101,13 @@ pub enum Error {
 
     #[error("URL has no port")]
     URLNoPort,
+
+    #[error("{source}")]
+    HttpParseError {
+        #[from]
+        source: HttpParseError,
+    },
+
+    #[error("Incomplete HTTP request")]
+    IncompleteHTTPRequest,
 }

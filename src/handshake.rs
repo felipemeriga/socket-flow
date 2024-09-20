@@ -2,11 +2,11 @@ use crate::connection::WSConnection;
 use crate::error::Error;
 use crate::message::Message;
 use crate::read::ReadStream;
-use crate::request::parse_to_http_request;
+use crate::request::{parse_to_http_request, RequestExt};
 use crate::write::{Writer, WriterKind};
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
-use bytes::BytesMut;
+use httparse::{Request, EMPTY_HEADER};
 use rand::random;
 use sha1::{Digest, Sha1};
 use std::sync::Arc;
@@ -14,10 +14,8 @@ use tokio::io::{split, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHa
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
-use tokio::time::{timeout, Duration};
 use tokio_stream::wrappers::ReceiverStream;
 
-const SEC_WEBSOCKETS_KEY: &str = "Sec-WebSocket-Key:";
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
 
@@ -38,20 +36,9 @@ pub async fn accept_async(stream: TcpStream) -> Result {
     let (reader, mut write_half) = split(stream);
     let mut buf_reader = BufReader::new(reader);
 
-    let sec_websockets_accept = header_read(&mut buf_reader).await;
+    parse_handshake(&mut buf_reader, &mut write_half).await?;
 
-    match sec_websockets_accept {
-        Some(accept_value) => {
-            let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_value);
-            write_half
-                .write_all(response.as_bytes())
-                .await
-                .map_err(|source| Error::IOError { source })?;
-            write_half.flush().await?;
-        }
-        None => Err(Error::NoSecWebsocketKey)?,
-    }
-
+    // Identify permessage-deflate for enabling compression
     second_stage_handshake(buf_reader, write_half, WriterKind::Server).await
 }
 
@@ -140,54 +127,6 @@ pub async fn connect_async(addr: &str) -> Result {
     second_stage_handshake(buf_reader, write_half, WriterKind::Client).await
 }
 
-// Here we are using the generic T, and expressing its two tokio traits, to avoiding adding the
-// entire type of the argument in the function signature (BufReader<ReadHalf<TcpStream>>)
-// The Unpin trait in Rust is used when the exact location of an object in memory needs to remain
-// constant after being pinned. In simple terms, it means that the object doesn't move around in memory
-// Here, we need to use Unpin, because the timeout function puts the passed Future into a Pin<Box<dyn Future>>
-async fn header_read<T: AsyncReadExt + Unpin>(buf_reader: &mut T) -> Option<String> {
-    let mut websocket_header: Option<String> = None;
-    let mut websocket_accept: Option<String> = None;
-    let mut header_buf = BytesMut::with_capacity(1024 * 16); // 16 kilobytes
-
-    // Limit the maximum amount of data read to prevent a denial of service attack.
-    while header_buf.len() <= 1024 * 16 {
-        let mut tmp_buf = vec![0; 1024];
-        match timeout(Duration::from_secs(10), buf_reader.read(&mut tmp_buf)).await {
-            Ok(Ok(0)) | Err(_) => break, // EOF reached or Timeout, we stop. In the case of EOF
-            // there is no need to log or return EOF or timeout errors
-            Ok(Ok(n)) => {
-                header_buf.extend_from_slice(&tmp_buf[..n]);
-                let s = String::from_utf8_lossy(&header_buf);
-                if let Some(start) = s.find(SEC_WEBSOCKETS_KEY) {
-                    websocket_header = Some(s[start..].lines().next().unwrap().to_string());
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    if let Some(header) = websocket_header {
-        if let Some(key) = parse_websocket_key(header) {
-            websocket_accept = Some(generate_websocket_accept_value(key));
-        }
-    }
-
-    websocket_accept
-}
-
-fn parse_websocket_key(header: String) -> Option<String> {
-    for line in header.lines() {
-        if line.starts_with(SEC_WEBSOCKETS_KEY) {
-            if let Some(stripped) = line.strip_prefix(SEC_WEBSOCKETS_KEY) {
-                return stripped.split_whitespace().next().map(ToOwned::to_owned);
-            }
-        }
-    }
-    None
-}
-
 fn generate_websocket_accept_value(key: String) -> String {
     let mut sha1 = Sha1::new();
     sha1.update(key.as_bytes());
@@ -198,4 +137,56 @@ fn generate_websocket_accept_value(key: String) -> String {
 fn generate_websocket_key() -> String {
     let random_bytes: [u8; 16] = random();
     BASE64_STANDARD.encode(random_bytes)
+}
+
+async fn parse_handshake(
+    buf_reader: &mut BufReader<ReadHalf<TcpStream>>,
+    write_half: &mut WriteHalf<TcpStream>,
+) -> std::result::Result<(), Error> {
+    // Using a 1024 sized buffer, because since this is an opening handshake request,
+    // there won't be any cases where we have big requests, which also prevents malicious
+    // connections that sends a lot of data
+    let mut buffer = vec![0; 1024];
+
+    // Read the request into the buffer
+    let n = buf_reader.read(&mut buffer).await?;
+
+    // Parse the HTTP request from the buffer
+    let mut headers = [EMPTY_HEADER; 16];
+    let mut req = Request::new(&mut headers);
+
+    req.parse(&buffer[..n])?;
+
+    // Validate the WebSocket handshake
+    if req.method != Some("GET") || req.version != Some(1) {
+        return Err(Error::InvalidHTTPHandshake);
+    }
+
+    if req.get_header_value("Connection") != Some(String::from("Upgrade")) {
+        return Err(Error::NoConnectionHeaderPresent);
+    }
+
+    if req.get_header_value("Upgrade") != Some(String::from("websocket")) {
+        return Err(Error::NoUpgradeHeaderPresent);
+    }
+
+    if req.get_header_value("Host").is_none() {
+        return Err(Error::NoHostHeaderPresent);
+    }
+
+    let sec_websocket_key = match req.get_header_value("Sec-WebSocket-Key") {
+        Some(key) => key.to_string(),
+        None => Err(Error::NoSecWebsocketKey)?,
+    };
+
+    let accept_key = generate_websocket_accept_value(sec_websocket_key);
+
+    let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
+    write_half
+        .write_all(response.as_bytes())
+        .await
+        .map_err(|source| Error::IOError { source })?;
+    write_half.flush().await?;
+
+    Ok(())
 }
