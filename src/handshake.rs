@@ -162,13 +162,13 @@ async fn parse_handshake(
         return Err(Error::InvalidHTTPHandshake);
     }
 
-    if req.get_header_value("Connection") != Some(String::from("Upgrade")) {
-        return Err(Error::NoConnectionHeaderPresent);
-    }
-
-    if req.get_header_value("Upgrade") != Some(String::from("websocket")) {
-        return Err(Error::NoUpgradeHeaderPresent);
-    }
+    // if req.get_header_value("Connection") != Some(String::from("Upgrade")) {
+    //     return Err(Error::NoConnectionHeaderPresent);
+    // }
+    //
+    // if req.get_header_value("Upgrade") != Some(String::from("websocket")) {
+    //     return Err(Error::NoUpgradeHeaderPresent);
+    // }
 
     if req.get_header_value("Host").is_none() {
         return Err(Error::NoHostHeaderPresent);
