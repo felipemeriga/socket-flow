@@ -21,3 +21,4 @@ mod request;
 pub mod server;
 pub mod split;
 mod write;
+mod tests;
