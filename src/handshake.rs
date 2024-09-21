@@ -14,6 +14,7 @@ use tokio::io::{split, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHa
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
+use tokio::time::{timeout, Duration};
 use tokio_stream::wrappers::ReceiverStream;
 
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -24,6 +25,10 @@ const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Upgrade: websocket\r\n\
         Sec-WebSocket-Accept: {}\r\n\
         \r\n";
+
+const HTTP_METHOD: &str = "GET";
+const SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";
+const HOST: &str = "Host";
 
 pub type Result = std::result::Result<WSConnection, Error>;
 
@@ -148,8 +153,17 @@ async fn parse_handshake(
     // connections that sends a lot of data
     let mut buffer = vec![0; 1024];
 
-    // Read the request into the buffer
-    let n = buf_reader.read(&mut buffer).await?;
+    // Adding a timeout to the buffer read, since some attackers may only connect to the TCP
+    // endpoint, and froze without sending the HTTP handshake.
+    // Therefore, we need to drop all these cases
+    let read_result = timeout(
+        Duration::from_secs(2), buf_reader.read(&mut buffer)).await;
+
+    let n = match read_result {
+        Ok(Ok(size)) => size,        // Continue processing the payload
+        Ok(Err(e)) => Err(e)?, // An error occurred while reading
+        Err(_e) => Err(_e)?,   // Reading from the socket timed out
+    };
 
     // Parse the HTTP request from the buffer
     let mut headers = [EMPTY_HEADER; 16];
@@ -158,23 +172,15 @@ async fn parse_handshake(
     req.parse(&buffer[..n])?;
 
     // Validate the WebSocket handshake
-    if req.method != Some("GET") || req.version != Some(1) {
+    if req.method != Some(HTTP_METHOD) || req.version != Some(1) {
         return Err(Error::InvalidHTTPHandshake);
     }
 
-    // if req.get_header_value("Connection") != Some(String::from("Upgrade")) {
-    //     return Err(Error::NoConnectionHeaderPresent);
-    // }
-    //
-    // if req.get_header_value("Upgrade") != Some(String::from("websocket")) {
-    //     return Err(Error::NoUpgradeHeaderPresent);
-    // }
-
-    if req.get_header_value("Host").is_none() {
+    if req.get_header_value(HOST).is_none() {
         return Err(Error::NoHostHeaderPresent);
     }
 
-    let sec_websocket_key = match req.get_header_value("Sec-WebSocket-Key") {
+    let sec_websocket_key = match req.get_header_value(SEC_WEBSOCKET_KEY) {
         Some(key) => key.to_string(),
         None => Err(Error::NoSecWebsocketKey)?,
     };
