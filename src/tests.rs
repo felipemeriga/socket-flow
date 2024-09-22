@@ -1,7 +1,13 @@
 #[cfg(test)]
 mod tests {
     use crate::frame::{Frame, OpCode};
-    use crate::request::parse_to_http_request;
+    use crate::request::{parse_to_http_request, RequestExt};
+
+    use tokio::net::{TcpStream, TcpListener};
+    use tokio::io::{AsyncWriteExt, AsyncReadExt};
+    use std::error::Error;
+    use httparse::{EMPTY_HEADER, Request};
+    use crate::handshake::{accept_async, connect_async, generate_websocket_accept_value, HTTP_ACCEPT_RESPONSE, SEC_WEBSOCKET_KEY};
 
     #[test]
     fn test_opcode() {
@@ -55,5 +61,82 @@ mod tests {
     fn test_parse_to_http_request_no_host() {
         let result = parse_to_http_request("ws://:8080", "dGhlIHNhbXBsZSBub25jZQ==");
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_accept_async() -> Result<(), Box<dyn Error>> {
+        // Start a TCP listener (server) to accept a connection
+        let listener = TcpListener::bind("127.0.0.1:0").await?; // bind to an available port
+        let addr = listener.local_addr()?; // get the local address for the client to connect to
+
+        // Simulate the client in a separate task
+        let client = tokio::spawn(async move {
+            // Client creates a connection to the server
+            let mut stream = TcpStream::connect(addr).await.unwrap();
+
+            // Send a mock WebSocket handshake request to the server
+            let handshake_request = "GET / HTTP/1.1\r\n\
+                                Host: 127.0.0.1\r\n\
+                                Upgrade: websocket\r\n\
+                                Connection: Upgrade\r\n\
+                                Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==\r\n\
+                                Sec-WebSocket-Version: 13\r\n\r\n";
+            stream.write_all(handshake_request.as_bytes()).await.unwrap();
+
+            // Read the response from the server (the server's handshake response)
+            let mut buf = [0; 1024];
+            let n = stream.read(&mut buf).await.unwrap();
+
+            // Optional: Assert that the server sent a valid WebSocket handshake response
+            let response = String::from_utf8_lossy(&buf[..n]);
+            assert!(response.contains("HTTP/1.1 101 Switching Protocols"));
+        });
+
+        // Simulate the server accepting a connection
+        let (socket, _) = listener.accept().await?;
+
+        // Call your async WebSocket handshake function
+        accept_async(socket).await?;
+
+        // Ensure the client finishes
+        client.await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_connect_async() -> Result<(), Box<dyn Error>> {
+        // Start a TCP listener (server) to accept a connection
+        let listener = TcpListener::bind("127.0.0.1:9005").await?; // bind to an available port
+
+        // Simulate the server in a separate task
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            let mut buffer: Vec<u8> = vec![0;1024];
+            let n = stream.read(&mut buffer).await.unwrap();
+
+            let mut headers = [EMPTY_HEADER; 16];
+            let mut req = Request::new(&mut headers);
+
+            req.parse(&buffer[..n]).unwrap();
+
+            let sec_websocket_key = req.get_header_value(SEC_WEBSOCKET_KEY).unwrap();
+
+            let accept_key = generate_websocket_accept_value(sec_websocket_key);
+
+            let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
+            stream
+                .write_all(response.as_bytes())
+                .await.unwrap();
+            stream.flush().await.unwrap();
+        });
+
+        // Call the connect_async function for connecting to the server
+        connect_async("ws://127.0.0.1:9005").await?;
+
+        server.await?;
+
+        Ok(())
     }
 }

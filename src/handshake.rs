@@ -20,14 +20,14 @@ use tokio_stream::wrappers::ReceiverStream;
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
 
-const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
+pub(crate) const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Connection: Upgrade\r\n\
         Upgrade: websocket\r\n\
         Sec-WebSocket-Accept: {}\r\n\
         \r\n";
 
 const HTTP_METHOD: &str = "GET";
-const SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";
+pub(crate) const SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";
 const HOST: &str = "Host";
 
 pub type Result = std::result::Result<WSConnection, Error>;
@@ -132,7 +132,7 @@ pub async fn connect_async(addr: &str) -> Result {
     second_stage_handshake(buf_reader, write_half, WriterKind::Client).await
 }
 
-fn generate_websocket_accept_value(key: String) -> String {
+pub(crate) fn generate_websocket_accept_value(key: String) -> String {
     let mut sha1 = Sha1::new();
     sha1.update(key.as_bytes());
     sha1.update(UUID.as_bytes());
@@ -157,7 +157,7 @@ async fn parse_handshake(
     // endpoint, and froze without sending the HTTP handshake.
     // Therefore, we need to drop all these cases
     let read_result = timeout(
-        Duration::from_secs(2), buf_reader.read(&mut buffer)).await;
+        Duration::from_secs(5), buf_reader.read(&mut buffer)).await;
 
     let n = match read_result {
         Ok(Ok(size)) => size,        // Continue processing the payload
