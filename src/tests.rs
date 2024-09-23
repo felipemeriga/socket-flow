@@ -6,6 +6,7 @@ mod tests {
     use tokio::net::{TcpStream, TcpListener};
     use tokio::io::{AsyncWriteExt, AsyncReadExt};
     use std::error::Error;
+    use futures::StreamExt;
     use httparse::{EMPTY_HEADER, Request};
     use crate::handshake::{accept_async, connect_async, generate_websocket_accept_value, HTTP_ACCEPT_RESPONSE, SEC_WEBSOCKET_KEY};
 
@@ -111,9 +112,11 @@ mod tests {
 
         // Simulate the server in a separate task
         let server = tokio::spawn(async move {
+            // There is no need to split the stream, since we are doing everything inside this task
             let (mut stream, _) = listener.accept().await.unwrap();
 
-            let mut buffer: Vec<u8> = vec![0;1024];
+            // create a buffer for the incoming handshake request
+            let mut buffer: Vec<u8> = vec![0; 1024];
             let n = stream.read(&mut buffer).await.unwrap();
 
             let mut headers = [EMPTY_HEADER; 16];
@@ -121,6 +124,8 @@ mod tests {
 
             req.parse(&buffer[..n]).unwrap();
 
+            // Already testing get_header_value func, since it's easier than spliting the string to
+            // find sec_websocket_key
             let sec_websocket_key = req.get_header_value(SEC_WEBSOCKET_KEY).unwrap();
 
             let accept_key = generate_websocket_accept_value(sec_websocket_key);
@@ -136,6 +141,39 @@ mod tests {
         connect_async("ws://127.0.0.1:9005").await?;
 
         server.await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_text_message() -> Result<(), Box<dyn Error>> {
+        // Message to be sent by client
+        const MESSAGE: &str = "TEST";
+
+        // Start a TCP listener (server) to accept a connection
+        let listener = TcpListener::bind("127.0.0.1:9005").await?; // bind to an available port
+
+        tokio::spawn(async move {
+            // Connect to the endpoint and send a simple text message
+            let mut client_connection = connect_async("ws://127.0.0.1:9005").await.unwrap();
+            client_connection.send(String::from(MESSAGE).into_bytes()).await.unwrap();
+        });
+
+        // Accept the connection and generate server connection
+        let (stream, _) = listener.accept().await?;
+        let mut server_connection = accept_async(stream).await?;
+
+        // Wait to receive message from client
+        while let Some(result) = server_connection.next().await{
+            match result {
+                Ok(message) => {
+                    assert_eq!(message.as_text()?, String::from(MESSAGE), "{}", format!("Message receive from client should be: {}", MESSAGE));
+                    break;
+                }
+                Err(err) => Err(err)?
+            }
+        }
+
 
         Ok(())
     }
