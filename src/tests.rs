@@ -151,11 +151,11 @@ mod tests {
         const MESSAGE: &str = "TEST";
 
         // Start a TCP listener (server) to accept a connection
-        let listener = TcpListener::bind("127.0.0.1:9005").await?; // bind to an available port
+        let listener = TcpListener::bind("127.0.0.1:9006").await?; // bind to an available port
 
         tokio::spawn(async move {
             // Connect to the endpoint and send a simple text message
-            let mut client_connection = connect_async("ws://127.0.0.1:9005").await.unwrap();
+            let mut client_connection = connect_async("ws://127.0.0.1:9006").await.unwrap();
             client_connection.send(String::from(MESSAGE).into_bytes()).await.unwrap();
         });
 
