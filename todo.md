@@ -5,9 +5,6 @@
 
 - add compression to client and server
 - implement server example using ws_connection internally for sending custom data
-- unit tests
-- integration tests
-- test at scale
 - SSL support
 
 
@@ -28,3 +25,6 @@
 - create README.md for the repo (Documentation)
 - autobahn tests for server
 - autobahn tests for client
+- unit tests
+- integration tests
+- test at scale
