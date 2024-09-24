@@ -7,7 +7,6 @@
 - implement server example using ws_connection internally for sending custom data
 - SSL support
 
-
 ## DONE
 
 - Wait the client to receive close from server before closing the connection
