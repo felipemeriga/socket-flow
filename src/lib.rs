@@ -20,5 +20,6 @@ mod read;
 mod request;
 pub mod server;
 pub mod split;
-mod write;
+pub mod stream;
 mod tests;
+mod write;

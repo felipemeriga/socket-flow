@@ -3,12 +3,16 @@ mod tests {
     use crate::frame::{Frame, OpCode};
     use crate::request::{parse_to_http_request, RequestExt};
 
-    use tokio::net::{TcpStream, TcpListener};
-    use tokio::io::{AsyncWriteExt, AsyncReadExt};
-    use std::error::Error;
+    use crate::handshake::{
+        accept_async, connect_async, generate_websocket_accept_value, HTTP_ACCEPT_RESPONSE,
+        SEC_WEBSOCKET_KEY,
+    };
     use futures::StreamExt;
-    use httparse::{EMPTY_HEADER, Request};
-    use crate::handshake::{accept_async, connect_async, generate_websocket_accept_value, HTTP_ACCEPT_RESPONSE, SEC_WEBSOCKET_KEY};
+    use httparse::{Request, EMPTY_HEADER};
+    use std::error::Error;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+    use crate::stream::SocketFlowStream;
 
     #[test]
     fn test_opcode() {
@@ -38,7 +42,8 @@ mod tests {
 
     #[test]
     fn test_parse_to_http_request_valid() {
-        let (request, host_with_port) = parse_to_http_request("ws://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==").unwrap();
+        let (request, host_with_port) =
+            parse_to_http_request("ws://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==").unwrap();
         assert_eq!(host_with_port, "localhost:8080");
         assert!(request.starts_with("GET / HTTP/1.1"));
         assert!(request.contains("Host: localhost:8080"));
@@ -82,7 +87,10 @@ mod tests {
                                 Connection: Upgrade\r\n\
                                 Sec-WebSocket-Key: SGVsbG8sIHdvcmxkIQ==\r\n\
                                 Sec-WebSocket-Version: 13\r\n\r\n";
-            stream.write_all(handshake_request.as_bytes()).await.unwrap();
+            stream
+                .write_all(handshake_request.as_bytes())
+                .await
+                .unwrap();
 
             // Read the response from the server (the server's handshake response)
             let mut buf = [0; 1024];
@@ -97,7 +105,7 @@ mod tests {
         let (socket, _) = listener.accept().await?;
 
         // Call your async WebSocket handshake function
-        accept_async(socket).await?;
+        accept_async(SocketFlowStream::Plain(socket)).await?;
 
         // Ensure the client finishes
         client.await?;
@@ -131,9 +139,7 @@ mod tests {
             let accept_key = generate_websocket_accept_value(sec_websocket_key);
 
             let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
-            stream
-                .write_all(response.as_bytes())
-                .await.unwrap();
+            stream.write_all(response.as_bytes()).await.unwrap();
             stream.flush().await.unwrap();
         });
 
@@ -156,24 +162,31 @@ mod tests {
         tokio::spawn(async move {
             // Connect to the endpoint and send a simple text message
             let mut client_connection = connect_async("ws://127.0.0.1:9006").await.unwrap();
-            client_connection.send(String::from(MESSAGE).into_bytes()).await.unwrap();
+            client_connection
+                .send(String::from(MESSAGE).into_bytes())
+                .await
+                .unwrap();
         });
 
         // Accept the connection and generate server connection
         let (stream, _) = listener.accept().await?;
-        let mut server_connection = accept_async(stream).await?;
+        let mut server_connection = accept_async(SocketFlowStream::Plain(stream)).await?;
 
         // Wait to receive message from client
-        while let Some(result) = server_connection.next().await{
+        while let Some(result) = server_connection.next().await {
             match result {
                 Ok(message) => {
-                    assert_eq!(message.as_text()?, String::from(MESSAGE), "{}", format!("Message receive from client should be: {}", MESSAGE));
+                    assert_eq!(
+                        message.as_text()?,
+                        String::from(MESSAGE),
+                        "{}",
+                        format!("Message receive from client should be: {}", MESSAGE)
+                    );
                     break;
                 }
-                Err(err) => Err(err)?
+                Err(err) => Err(err)?,
             }
         }
-
 
         Ok(())
     }

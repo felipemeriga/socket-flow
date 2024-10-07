@@ -1,9 +1,9 @@
 use crate::error::Error;
 use crate::frame::Frame;
+use crate::stream::SocketFlowStream;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use tokio::io::{AsyncWriteExt, WriteHalf};
-use tokio::net::TcpStream;
 
 pub enum WriterKind {
     Client,
@@ -11,12 +11,12 @@ pub enum WriterKind {
 }
 
 pub struct Writer {
-    write_half: WriteHalf<TcpStream>,
+    write_half: WriteHalf<SocketFlowStream>,
     kind: WriterKind,
 }
 
 impl Writer {
-    pub fn new(write_half: WriteHalf<TcpStream>, kind: WriterKind) -> Self {
+    pub fn new(write_half: WriteHalf<SocketFlowStream>, kind: WriterKind) -> Self {
         Self { write_half, kind }
     }
 

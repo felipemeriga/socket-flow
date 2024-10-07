@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::message::Message;
 use crate::read::ReadStream;
 use crate::request::{parse_to_http_request, RequestExt};
+use crate::stream::SocketFlowStream;
 use crate::write::{Writer, WriterKind};
 use base64::prelude::BASE64_STANDARD;
 use base64::prelude::*;
@@ -35,9 +36,9 @@ pub type Result = std::result::Result<WSConnection, Error>;
 /// Used for accepting websocket connections as a server.
 ///
 /// It basically does the first step of verifying the client key in the request
-/// going to the second step, which is sending the accept response,
+/// going to the second step, which is sending the acceptance response,
 /// finally creating the connection, and returning a `WSConnection`
-pub async fn accept_async(stream: TcpStream) -> Result {
+pub async fn accept_async(stream: SocketFlowStream) -> Result {
     let (reader, mut write_half) = split(stream);
     let mut buf_reader = BufReader::new(reader);
 
@@ -48,8 +49,8 @@ pub async fn accept_async(stream: TcpStream) -> Result {
 }
 
 async fn second_stage_handshake(
-    buf_reader: BufReader<ReadHalf<TcpStream>>,
-    write_half: WriteHalf<TcpStream>,
+    buf_reader: BufReader<ReadHalf<SocketFlowStream>>,
+    write_half: WriteHalf<SocketFlowStream>,
     kind: WriterKind,
 ) -> Result {
     // This writer instance would be used for writing frames into the socket.
@@ -98,8 +99,9 @@ pub async fn connect_async(addr: &str) -> Result {
     let (request, hostname) = parse_to_http_request(addr, &client_websocket_key)?;
 
     let stream = TcpStream::connect(hostname).await?;
+    let maybetls = SocketFlowStream::Plain(stream);
 
-    let (reader, mut write_half) = split(stream);
+    let (reader, mut write_half) = split(maybetls);
     let mut buf_reader = BufReader::new(reader);
 
     write_half.write_all(request.as_bytes()).await?;
@@ -145,8 +147,8 @@ fn generate_websocket_key() -> String {
 }
 
 async fn parse_handshake(
-    buf_reader: &mut BufReader<ReadHalf<TcpStream>>,
-    write_half: &mut WriteHalf<TcpStream>,
+    buf_reader: &mut BufReader<ReadHalf<SocketFlowStream>>,
+    write_half: &mut WriteHalf<SocketFlowStream>,
 ) -> std::result::Result<(), Error> {
     // Using a 1024 sized buffer, because since this is an opening handshake request,
     // there won't be any cases where we have big requests, which also prevents malicious
@@ -156,11 +158,10 @@ async fn parse_handshake(
     // Adding a timeout to the buffer read, since some attackers may only connect to the TCP
     // endpoint, and froze without sending the HTTP handshake.
     // Therefore, we need to drop all these cases
-    let read_result = timeout(
-        Duration::from_secs(5), buf_reader.read(&mut buffer)).await;
+    let read_result = timeout(Duration::from_secs(5), buf_reader.read(&mut buffer)).await;
 
     let n = match read_result {
-        Ok(Ok(size)) => size,        // Continue processing the payload
+        Ok(Ok(size)) => size,  // Continue processing the payload
         Ok(Err(e)) => Err(e)?, // An error occurred while reading
         Err(_e) => Err(_e)?,   // Reading from the socket timed out
     };

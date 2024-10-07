@@ -1,5 +1,6 @@
 use crate::event::{generate_new_uuid, Event, EventStream};
 use crate::handshake::accept_async;
+use crate::stream::SocketFlowStream;
 use futures::StreamExt;
 use std::io::Error;
 use tokio::net::TcpListener;
@@ -23,7 +24,7 @@ pub async fn start_server(port: u16) -> Result<EventStream, Error> {
             let uuid = generate_new_uuid();
             match listener.accept().await {
                 Ok((stream, _)) => {
-                    let ws_connection = match accept_async(stream).await {
+                    let ws_connection = match accept_async(SocketFlowStream::Plain(stream)).await {
                         Ok(conn) => conn,
                         Err(err) => {
                             tx.send(Event::Error(uuid, err)).await.unwrap();
