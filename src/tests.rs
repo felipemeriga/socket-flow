@@ -42,20 +42,15 @@ mod tests {
 
     #[test]
     fn test_parse_to_http_request_valid() {
-        let (request, host_with_port) =
+        let (request, host_with_port, host, use_tls) =
             parse_to_http_request("ws://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==").unwrap();
         assert_eq!(host_with_port, "localhost:8080");
         assert!(request.starts_with("GET / HTTP/1.1"));
-        assert!(request.contains("Host: localhost:8080"));
+        assert!(request.contains("Host: localhost"));
         assert!(request.contains("Upgrade: websocket"));
         assert!(request.contains("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="));
     }
 
-    #[test]
-    fn test_parse_to_http_request_no_port() {
-        let result = parse_to_http_request("ws://localhost", "dGhlIHNhbXBsZSBub25jZQ==");
-        assert!(result.is_err());
-    }
 
     #[test]
     fn test_parse_to_http_request_invalid_scheme() {
@@ -144,7 +139,7 @@ mod tests {
         });
 
         // Call the connect_async function for connecting to the server
-        connect_async("ws://127.0.0.1:9005").await?;
+        connect_async("ws://127.0.0.1:9005", None).await?;
 
         server.await?;
 
@@ -161,7 +156,7 @@ mod tests {
 
         tokio::spawn(async move {
             // Connect to the endpoint and send a simple text message
-            let mut client_connection = connect_async("ws://127.0.0.1:9006").await.unwrap();
+            let mut client_connection = connect_async("ws://127.0.0.1:9006", None).await.unwrap();
             client_connection
                 .send(String::from(MESSAGE).into_bytes())
                 .await

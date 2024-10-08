@@ -115,16 +115,17 @@ Here is a echo-server example, that you can also find in: [Example](./examples/e
 use futures::StreamExt;
 use log::*;
 use socket_flow::handshake::accept_async;
+use socket_flow::stream::SocketFlowStream;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 
 async fn handle_connection(_: SocketAddr, stream: TcpStream) {
-    match accept_async(stream).await {
+    match accept_async(SocketFlowStream::Plain(stream)).await {
         Ok(mut ws_connection) => {
             while let Some(result) = ws_connection.next().await {
                 match result {
-                    Ok(frame) => {
-                        if ws_connection.send_frame(frame).await.is_err() {
+                    Ok(message) => {
+                        if ws_connection.send_message(message).await.is_err() {
                             error!("Failed to send message");
                             break;
                         }
@@ -148,12 +149,8 @@ async fn main() {
     let listener = TcpListener::bind(&addr).await.expect("Can't listen");
     info!("Listening on: {}", addr);
 
-    while let Ok((stream, _)) = listener.accept().await {
-        let peer = stream
-            .peer_addr()
-            .expect("connected streams should have a peer address");
+    while let Ok((stream, peer)) = listener.accept().await {
         info!("Peer address: {}", peer);
-
         tokio::spawn(handle_connection(peer, stream));
     }
 }
@@ -175,15 +172,15 @@ It includes error handling through `Result`.
 Here is an example of how to run a client, that will perform some operations and disconnect gracefully:
 ```rust
 use futures::StreamExt;
+use log::*;
 use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
-use log::*;
 use socket_flow::handshake::connect_async;
 use tokio::select;
 use tokio::time::{interval, Duration};
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr).await {
+    match connect_async(addr, None).await {
         Ok(mut ws_connection) => {
             let mut ticker = interval(Duration::from_secs(5));
             // it will be used for closing the connection
@@ -230,7 +227,7 @@ async fn handle_connection(addr: &str) {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    handle_connection("ws://127.0.0.1:9002").await;
+    handle_connection("ws://localhost:9002").await;
 }
 
 fn generate_random_string() -> String {
@@ -252,119 +249,20 @@ In this example, the client will try to connect to `ws://127.0.0.1:9002`,
 if the connection is established, it will start sending random strings every 5 seconds into the socket.
 After sending three strings, it will close the connection gracefully and end its execution.
 
-### Echo server TLS
-Here is an echo-server TLS example, that you can also find in: [Example](./examples/echo_server_tls.rs)
-
-```rust
-use futures::StreamExt;
-use log::{error, info};
-use pki_types::{CertificateDer, PrivateKeyDer};
-use rustls::ServerConfig;
-use rustls_pemfile::{certs, private_key};
-use socket_flow::handshake::accept_async;
-use socket_flow::stream::SocketFlowStream;
-use std::fs::File;
-use std::io::{self, BufReader, ErrorKind};
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream};
-use tokio_rustls::{TlsAcceptor, TlsStream};
-
-async fn handle_connection(_: SocketAddr, stream: TlsStream<TcpStream>) {
-    match accept_async(SocketFlowStream::Secure(stream)).await {
-        Ok(mut ws_connection) => {
-            while let Some(result) = ws_connection.next().await {
-                match result {
-                    Ok(message) => {
-                        if ws_connection.send_message(message).await.is_err() {
-                            error!("Failed to send message");
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        error!("Received error from the stream: {}", e);
-                        break;
-                    }
-                }
-            }
-        }
-        Err(err) => error!("Error when performing handshake: {}", err),
-    }
-}
-fn load_certs(path: &Path) -> io::Result<Vec<CertificateDer<'static>>> {
-    certs(&mut BufReader::new(File::open(path)?)).collect()
-}
-
-fn load_key(path: &Path) -> io::Result<PrivateKeyDer<'static>> {
-    Ok(private_key(&mut BufReader::new(File::open(path)?))
-        .unwrap()
-        .ok_or(io::Error::new(
-            ErrorKind::Other,
-            "no private key found".to_string(),
-        ))?)
-}
-
-#[tokio::main]
-async fn main() -> io::Result<()> {
-    env_logger::init();
-
-    let addr = String::from("127.0.0.1:8000")
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
-
-    let certs = load_certs(Path::new("cert.pem"))?;
-    let key = load_key(Path::new("key.pem"))?;
-
-    let config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
-
-    let acceptor = TlsAcceptor::from(Arc::new(config));
-
-    let listener = TcpListener::bind(&addr).await?;
-
-    while let Ok((stream, peer)) = listener.accept().await {
-        info!("Peer address: {}", peer);
-        let tls_stream = acceptor.accept(stream).await?;
-
-        tokio::spawn(handle_connection(peer, TlsStream::Server(tls_stream)));
-    }
-
-    Ok(())
-}
-
-
-```
-
-For running this example, you will need a key and a certificate, and you can generate a self-signed one, like this:
-```shell
-openssl genpkey -algorithm RSA -out key.pem -pkeyopt rsa_keygen_bits:2048
-```
-
-```shell
-openssl req -x509 -new -key key.pem -out cert.pem -days 365
-```
-
-Place them in the root of the cloned repo, and you can run this example by:
-```shell
-cargo run --color=always --package socket-flow --example echo_server_tls
-```
-
-You can check more examples over [Examples](./examples)
+You can check more examples over [Examples](./examples).
 
 ## Testing
 
 Socket-flow passes the [Autobahn Test Suite](https://github.com/crossbario/autobahn-testsuite) for
 WebSockets.
-Also, it has some internal tests, for ensuring reliability
+Also, it has some internal tests, for ensuring reliability.
 
 ## TLS/SSL
 
 For now, this library only accepts [tokio-rustls](https://github.com/rustls/tokio-rustls), as an adapter library
-for adding SSL/TLS in your client/server implementation with socket-flow.
+for adding TLS in your client/server implementation with socket-flow.
+
+For checking how to set up TLS in server/client, and finding some examples, go to: [TLS Examples](./TLS.md).
 
 ## References
 

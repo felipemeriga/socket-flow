@@ -2,6 +2,7 @@ use crate::frame::Frame;
 use httparse::Error as HttpParseError;
 use std::io;
 use std::string::FromUtf8Error;
+use pki_types::InvalidDnsNameError;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::time::error::Elapsed;
@@ -110,4 +111,14 @@ pub enum Error {
 
     #[error("Incomplete HTTP request")]
     IncompleteHTTPRequest,
+
+    // Domain addr parsing error
+    #[error("{source}")]
+    DomainError {
+        #[from]
+        source: InvalidDnsNameError
+    },
+
+    #[error("use_tls = `{0}` argument does not match the passed URL scheme: `{1}`")]
+    SchemeAgainstTlsConfig(bool, String),
 }

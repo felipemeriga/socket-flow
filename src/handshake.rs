@@ -1,3 +1,6 @@
+use std::fs::File;
+use std::io::BufReader as SyncBufReader;
+use std::path::Path;
 use crate::connection::WSConnection;
 use crate::error::Error;
 use crate::message::Message;
@@ -12,10 +15,11 @@ use rand::random;
 use sha1::{Digest, Sha1};
 use std::sync::Arc;
 use tokio::io::{split, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream};
 use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
+use tokio_rustls::{TlsConnector, TlsStream};
 use tokio_stream::wrappers::ReceiverStream;
 
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -94,14 +98,40 @@ async fn second_stage_handshake(
 /// It basically does the first step of genereating the client key
 /// going to the second step, which is parsing the server reponse,
 /// finally creating the connection, and returning a `WSConnection`
-pub async fn connect_async(addr: &str) -> Result {
+pub async fn connect_async(addr: &str, ca_file: Option<&str>) -> Result {
     let client_websocket_key = generate_websocket_key();
-    let (request, hostname) = parse_to_http_request(addr, &client_websocket_key)?;
+
+    let (request, hostname, host, use_tls) = parse_to_http_request(addr, &client_websocket_key)?;
 
     let stream = TcpStream::connect(hostname).await?;
-    let maybetls = SocketFlowStream::Plain(stream);
 
-    let (reader, mut write_half) = split(maybetls);
+    let maybe_tls = if use_tls {
+        let mut root_cert_store = rustls::RootCertStore::empty();
+
+        if let Some(file) = ca_file {
+            let mut pem = SyncBufReader::new(File::open(Path::new(file))?);
+            for cert in rustls_pemfile::certs(&mut pem) {
+                root_cert_store.add(cert?).unwrap();
+            }
+        } else {
+            root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        }
+
+
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth();
+        let connector = TlsConnector::from(Arc::new(config));
+
+        let domain = pki_types::ServerName::try_from(host)?;
+        let tls_stream = connector.connect(domain, stream).await?;
+        SocketFlowStream::Secure(TlsStream::from(tls_stream))
+    } else {
+        SocketFlowStream::Plain(stream)
+    };
+
+
+    let (reader, mut write_half) = split(maybe_tls);
     let mut buf_reader = BufReader::new(reader);
 
     write_half.write_all(request.as_bytes()).await?;

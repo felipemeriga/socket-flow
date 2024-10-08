@@ -55,8 +55,8 @@ async fn main() -> io::Result<()> {
         .next()
         .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
 
-    let certs = load_certs(Path::new("cert.pem"))?;
-    let key = load_key(Path::new("key.pem"))?;
+    let certs = load_certs(Path::new("server.crt"))?;
+    let key = load_key(Path::new("server.key"))?;
 
     let config = rustls::ServerConfig::builder()
         .with_no_client_auth()
@@ -69,9 +69,14 @@ async fn main() -> io::Result<()> {
 
     while let Ok((stream, peer)) = listener.accept().await {
         info!("Peer address: {}", peer);
-        let tls_stream = acceptor.accept(stream).await?;
-
-        tokio::spawn(handle_connection(peer, TlsStream::Server(tls_stream)));
+        match acceptor.accept(stream).await {
+            Ok(tls_stream) => {
+                tokio::spawn(handle_connection(peer, TlsStream::Server(tls_stream)));
+            }
+            Err(err) => {
+                error!("TLS handshake failed with {}: {}", peer, err);
+            }
+        }
     }
 
     Ok(())
