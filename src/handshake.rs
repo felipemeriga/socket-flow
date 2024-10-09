@@ -106,14 +106,26 @@ pub async fn connect_async(addr: &str, ca_file: Option<&str>) -> Result {
     let stream = TcpStream::connect(hostname).await?;
 
     let maybe_tls = if use_tls {
+        // Creating a cert store, to inject the TLS certificates
         let mut root_cert_store = rustls::RootCertStore::empty();
 
+        // In the case you are using self-signed certificates on the server
+        // you are trying to connect, you must indicate a CA certificate of this server
+        // when connecting to it.
+        // Since the server has a self-signed cert, the only way of this library validating
+        // the cert is adding as an argument of the connect_async function
         if let Some(file) = ca_file {
             let mut pem = SyncBufReader::new(File::open(Path::new(file))?);
             for cert in rustls_pemfile::certs(&mut pem) {
                 root_cert_store.add(cert?).unwrap();
             }
         } else {
+            // Here we are adding TLS_SERVER_ROOTS to the certificate store,
+            // which is basically a reference to a list of trusted root certificates
+            // issue by a CA.
+            // In the case, you are establishing a connection with a server
+            // that has a valid trusted certificate.
+            // You won't need a CA file
             root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         }
 
