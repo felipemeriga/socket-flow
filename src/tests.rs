@@ -45,6 +45,8 @@ mod tests {
         let (request, host_with_port, host, use_tls) =
             parse_to_http_request("ws://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==").unwrap();
         assert_eq!(host_with_port, "localhost:8080");
+        assert_eq!(host, "localhost");
+        assert_eq!(use_tls, false);
         assert!(request.starts_with("GET / HTTP/1.1"));
         assert!(request.contains("Host: localhost"));
         assert!(request.contains("Upgrade: websocket"));
