@@ -8,6 +8,9 @@ pub fn parse_to_http_request(ws_url: &str, key: &str) -> Result<(String, String,
     let parsed_url = Url::parse(ws_url)?;
     let mut use_tls = false;
 
+    // Clause just to validate the user has passed the proper URL scheme
+    // Also, we need to get the proper HTTP port for that, in the case ws_url
+    // is a domain instead of an IP
     let http_port: u16 = match parsed_url.scheme() {
         "ws" => 80,
         "wss" => {
@@ -18,8 +21,20 @@ pub fn parse_to_http_request(ws_url: &str, key: &str) -> Result<(String, String,
     };
 
     let host = parsed_url.host_str().ok_or(Error::URLNoHost)?;
+    // In the case ws_url is a domain instead of an IP, we need the HTTP port for using in the
+    // TCP connection string
     let port = parsed_url.port().unwrap_or(http_port);
 
+    // This will be used in the handshake request.
+    // If ws_url is an IP, we need to add the respective port
+    // If ws_url is a DNS, we don't need the port
+    let request_host_field = match parsed_url.port() {
+        Some(port) => format!("{}:{}", host, port),
+        None => String::from(host)
+    };
+
+    // We need the port together with the host for establishing a TCP connection
+    // regardless ws_url is an IP or domain
     let host_with_port = format!("{}:{}", host, port);
 
     let request_path = match parsed_url.query() {
@@ -33,7 +48,7 @@ pub fn parse_to_http_request(ws_url: &str, key: &str) -> Result<(String, String,
     let request = format!(
         "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n\r\n",
         request_path,
-        host,
+        request_host_field,
         key,
     );
 
