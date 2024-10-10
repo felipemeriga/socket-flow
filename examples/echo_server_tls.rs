@@ -55,8 +55,8 @@ async fn main() -> io::Result<()> {
         .next()
         .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
 
-    let certs = load_certs(Path::new("server.crt"))?;
-    let key = load_key(Path::new("server.key"))?;
+    let certs = load_certs(Path::new("cert.pem"))?;
+    let key = load_key(Path::new("key.pem"))?;
 
     let config = rustls::ServerConfig::builder()
         .with_no_client_auth()

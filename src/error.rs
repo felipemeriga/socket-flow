@@ -1,8 +1,8 @@
 use crate::frame::Frame;
 use httparse::Error as HttpParseError;
+use pki_types::InvalidDnsNameError;
 use std::io;
 use std::string::FromUtf8Error;
-use pki_types::InvalidDnsNameError;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::time::error::Elapsed;
@@ -116,7 +116,7 @@ pub enum Error {
     #[error("{source}")]
     DomainError {
         #[from]
-        source: InvalidDnsNameError
+        source: InvalidDnsNameError,
     },
 
     #[error("use_tls = `{0}` argument does not match the passed URL scheme: `{1}`")]

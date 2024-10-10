@@ -7,12 +7,12 @@ mod tests {
         accept_async, connect_async, generate_websocket_accept_value, HTTP_ACCEPT_RESPONSE,
         SEC_WEBSOCKET_KEY,
     };
+    use crate::stream::SocketFlowStream;
     use futures::StreamExt;
     use httparse::{Request, EMPTY_HEADER};
     use std::error::Error;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
-    use crate::stream::SocketFlowStream;
 
     #[test]
     fn test_opcode() {
@@ -52,7 +52,6 @@ mod tests {
         assert!(request.contains("Upgrade: websocket"));
         assert!(request.contains("Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="));
     }
-
 
     #[test]
     fn test_parse_to_http_request_invalid_scheme() {

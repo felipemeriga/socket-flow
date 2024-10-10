@@ -4,7 +4,10 @@ use url::Url;
 // Function used for client connection, parsing the ws/wss URL to http, for constructing the
 // handshake request, which includes the sec-websockets-key, the URL path, scheme and another relevant
 // info. This function also returns the hostname since this is necessary for establishing the TCP socket
-pub fn parse_to_http_request(ws_url: &str, key: &str) -> Result<(String, String, String, bool), Error> {
+pub fn parse_to_http_request(
+    ws_url: &str,
+    key: &str,
+) -> Result<(String, String, String, bool), Error> {
     let parsed_url = Url::parse(ws_url)?;
     let mut use_tls = false;
 
@@ -30,7 +33,7 @@ pub fn parse_to_http_request(ws_url: &str, key: &str) -> Result<(String, String,
     // If ws_url is a DNS, we don't need the port
     let request_host_field = match parsed_url.port() {
         Some(port) => format!("{}:{}", host, port),
-        None => String::from(host)
+        None => String::from(host),
     };
 
     // We need the port together with the host for establishing a TCP connection

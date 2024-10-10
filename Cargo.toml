@@ -61,4 +61,7 @@ name = "autobahn_client"
 name = "simple_server"
 
 [[example]]
+name = "simple_server_tls"
+
+[[example]]
 name = "crypto_client"

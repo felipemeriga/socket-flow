@@ -1,6 +1,6 @@
 # socket-flow
 
-Simple async WebSockets implementation for Tokio stack.
+Straightforward async Websockets library for Rust! With a lot of examples available!
 
 [![Apache licensed](https://img.shields.io/badge/license-Apache-blue.svg)](https://github.com/felipemeriga/socket-flow/blob/main/LICENSE)
 [![Crates.io](https://img.shields.io/crates/v/socket-flow.svg)](https://crates.io/crates/socket-flow)
@@ -31,9 +31,9 @@ Most of all WebSockets RFC features are implemented, like:
 - Scalability
 - Error handling
 - It passes the autobahn-test-suite
+- TLS Support
 
 Features to be added:
-- TLS/SSL support
 - Compression
 
 ## Usage

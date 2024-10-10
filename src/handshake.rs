@@ -1,6 +1,3 @@
-use std::fs::File;
-use std::io::BufReader as SyncBufReader;
-use std::path::Path;
 use crate::connection::WSConnection;
 use crate::error::Error;
 use crate::message::Message;
@@ -13,9 +10,12 @@ use base64::prelude::*;
 use httparse::{Request, EMPTY_HEADER};
 use rand::random;
 use sha1::{Digest, Sha1};
+use std::fs::File;
+use std::io::BufReader as SyncBufReader;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{split, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
-use tokio::net::{TcpStream};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
@@ -129,7 +129,6 @@ pub async fn connect_async(addr: &str, ca_file: Option<&str>) -> Result {
             root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         }
 
-
         let config = rustls::ClientConfig::builder()
             .with_root_certificates(root_cert_store)
             .with_no_client_auth();
@@ -141,7 +140,6 @@ pub async fn connect_async(addr: &str, ca_file: Option<&str>) -> Result {
     } else {
         SocketFlowStream::Plain(stream)
     };
-
 
     let (reader, mut write_half) = split(maybe_tls);
     let mut buf_reader = BufReader::new(reader);
