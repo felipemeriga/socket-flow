@@ -10,7 +10,7 @@ async fn main() {
     env_logger::init();
 
     let port: u16 = 8080;
-    match start_server(8080, None).await {
+    match start_server(port, None).await {
         Ok(mut event_receiver) => {
             let mut clients: HashMap<ID, WSWriter> = HashMap::new();
             info!("Server started on address 127.0.0.1:{}", port);

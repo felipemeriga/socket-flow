@@ -58,6 +58,8 @@ and we also have a plug-and-play option, which you can generate a Websockets ser
 This is a very practical example, because you can have a server with just calling `start_server` function, which returns
 an `EventStream`, for consuming server events, like new connections, messages, errors and disconnections.
 
+The `start_server` function also accepts a `rustls::ServerConfig` for enabling TLS in your server.
+
 ```rust
 use futures::StreamExt;
 use log::*;
@@ -71,7 +73,7 @@ async fn main() {
     env_logger::init();
 
     let port: u16 = 8080;
-    match start_server(8080).await {
+    match start_server(port, None).await {
         Ok(mut event_receiver) => {
             let mut clients: HashMap<ID, WSWriter> = HashMap::new();
             info!("Server started on address 127.0.0.1:{}", port);
