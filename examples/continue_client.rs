@@ -4,7 +4,7 @@ use rand::{thread_rng, Rng};
 use socket_flow::handshake::connect_async;
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr).await {
+    match connect_async(addr, None).await {
         Ok(mut ws_connection) => {
             let my_random_string = generate_random_string();
             info!("Sending random string: {}", my_random_string);

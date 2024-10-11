@@ -1,9 +1,13 @@
 use crate::event::{generate_new_uuid, Event, EventStream};
 use crate::handshake::accept_async;
+use crate::stream::SocketFlowStream;
 use futures::StreamExt;
+use rustls::ServerConfig;
 use std::io::Error;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio_rustls::{TlsAcceptor, TlsStream};
 
 /// A ready to use websockets server
 ///
@@ -11,7 +15,10 @@ use tokio::sync::mpsc;
 /// Accepts as argument that port, where the server will be running, and returns an `EventStream`.
 /// Which implements Stream trait, being capable of processing a stream of events sequentially
 /// notifying the end-user, about new client connections, disconnections, messages and errors.
-pub async fn start_server(port: u16) -> Result<EventStream, Error> {
+pub async fn start_server(
+    port: u16,
+    tls_config: Option<Arc<ServerConfig>>,
+) -> Result<EventStream, Error> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     let (tx, rx) = mpsc::channel(1000);
     // This method will return an EventStream, which holds a Receiver channel. Therefore, this
@@ -23,11 +30,24 @@ pub async fn start_server(port: u16) -> Result<EventStream, Error> {
             let uuid = generate_new_uuid();
             match listener.accept().await {
                 Ok((stream, _)) => {
-                    let ws_connection = match accept_async(stream).await {
+                    let socket_stream = if let Some(config) = tls_config.clone() {
+                        let acceptor = TlsAcceptor::from(config);
+                        match acceptor.accept(stream).await {
+                            Ok(tls_stream) => SocketFlowStream::Secure(TlsStream::from(tls_stream)),
+                            Err(err) => {
+                                tx.send(Event::Error(uuid, err.into())).await.unwrap();
+                                continue;
+                            }
+                        }
+                    } else {
+                        SocketFlowStream::Plain(stream)
+                    };
+
+                    let ws_connection = match accept_async(socket_stream).await {
                         Ok(conn) => conn,
                         Err(err) => {
                             tx.send(Event::Error(uuid, err)).await.unwrap();
-                            break;
+                            continue;
                         }
                     };
                     // splitting the connection, so we could monitor incoming messages into a
@@ -61,7 +81,7 @@ pub async fn start_server(port: u16) -> Result<EventStream, Error> {
                 }
                 Err(error) => {
                     tx.send(Event::Error(uuid, error.into())).await.unwrap();
-                    break;
+                    continue;
                 }
             }
         }

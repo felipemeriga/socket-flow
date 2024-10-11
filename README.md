@@ -1,6 +1,6 @@
 # socket-flow
 
-Simple async WebSockets implementation for Tokio stack.
+Straightforward async Websockets library for Rust! With a lot of examples available!
 
 [![Apache licensed](https://img.shields.io/badge/license-Apache-blue.svg)](https://github.com/felipemeriga/socket-flow/blob/main/LICENSE)
 [![Crates.io](https://img.shields.io/crates/v/socket-flow.svg)](https://crates.io/crates/socket-flow)
@@ -31,9 +31,9 @@ Most of all WebSockets RFC features are implemented, like:
 - Scalability
 - Error handling
 - It passes the autobahn-test-suite
+- TLS Support
 
 Features to be added:
-- TLS/SSL support
 - Compression
 
 ## Usage
@@ -58,6 +58,8 @@ and we also have a plug-and-play option, which you can generate a Websockets ser
 This is a very practical example, because you can have a server with just calling `start_server` function, which returns
 an `EventStream`, for consuming server events, like new connections, messages, errors and disconnections.
 
+The `start_server` function also accepts a `rustls::ServerConfig` for enabling TLS in your server.
+
 ```rust
 use futures::StreamExt;
 use log::*;
@@ -71,7 +73,7 @@ async fn main() {
     env_logger::init();
 
     let port: u16 = 8080;
-    match start_server(8080).await {
+    match start_server(port, None).await {
         Ok(mut event_receiver) => {
             let mut clients: HashMap<ID, WSWriter> = HashMap::new();
             info!("Server started on address 127.0.0.1:{}", port);
@@ -115,16 +117,17 @@ Here is a echo-server example, that you can also find in: [Example](./examples/e
 use futures::StreamExt;
 use log::*;
 use socket_flow::handshake::accept_async;
+use socket_flow::stream::SocketFlowStream;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 
 async fn handle_connection(_: SocketAddr, stream: TcpStream) {
-    match accept_async(stream).await {
+    match accept_async(SocketFlowStream::Plain(stream)).await {
         Ok(mut ws_connection) => {
             while let Some(result) = ws_connection.next().await {
                 match result {
-                    Ok(frame) => {
-                        if ws_connection.send_frame(frame).await.is_err() {
+                    Ok(message) => {
+                        if ws_connection.send_message(message).await.is_err() {
                             error!("Failed to send message");
                             break;
                         }
@@ -148,12 +151,8 @@ async fn main() {
     let listener = TcpListener::bind(&addr).await.expect("Can't listen");
     info!("Listening on: {}", addr);
 
-    while let Ok((stream, _)) = listener.accept().await {
-        let peer = stream
-            .peer_addr()
-            .expect("connected streams should have a peer address");
+    while let Ok((stream, peer)) = listener.accept().await {
         info!("Peer address: {}", peer);
-
         tokio::spawn(handle_connection(peer, stream));
     }
 }
@@ -175,15 +174,15 @@ It includes error handling through `Result`.
 Here is an example of how to run a client, that will perform some operations and disconnect gracefully:
 ```rust
 use futures::StreamExt;
+use log::*;
 use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
-use log::*;
 use socket_flow::handshake::connect_async;
 use tokio::select;
 use tokio::time::{interval, Duration};
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr).await {
+    match connect_async(addr, None).await {
         Ok(mut ws_connection) => {
             let mut ticker = interval(Duration::from_secs(5));
             // it will be used for closing the connection
@@ -230,7 +229,7 @@ async fn handle_connection(addr: &str) {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    handle_connection("ws://127.0.0.1:9002").await;
+    handle_connection("ws://localhost:9002").await;
 }
 
 fn generate_random_string() -> String {
@@ -252,14 +251,20 @@ In this example, the client will try to connect to `ws://127.0.0.1:9002`,
 if the connection is established, it will start sending random strings every 5 seconds into the socket.
 After sending three strings, it will close the connection gracefully and end its execution.
 
-
-You can check more examples over [Examples](./examples)
+You can check more examples over [Examples](./examples).
 
 ## Testing
 
 Socket-flow passes the [Autobahn Test Suite](https://github.com/crossbario/autobahn-testsuite) for
 WebSockets.
-Also, it has some internal tests, for ensuring reliability
+Also, it has some internal tests, for ensuring reliability.
+
+## TLS/SSL
+
+For now, this library only accepts [tokio-rustls](https://github.com/rustls/tokio-rustls), as an adapter library
+for adding TLS in your client/server implementation with socket-flow.
+
+For checking how to set up TLS in server/client, and finding some examples, go to: [TLS Examples](./TLS.md).
 
 ## References
 

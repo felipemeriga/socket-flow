@@ -1,11 +1,12 @@
 use futures::StreamExt;
 use log::*;
 use socket_flow::handshake::accept_async;
+use socket_flow::stream::SocketFlowStream;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 
 async fn handle_connection(_: SocketAddr, stream: TcpStream) {
-    match accept_async(stream).await {
+    match accept_async(SocketFlowStream::Plain(stream)).await {
         Ok(mut ws_connection) => {
             while let Some(result) = ws_connection.next().await {
                 match result {
@@ -34,12 +35,8 @@ async fn main() {
     let listener = TcpListener::bind(&addr).await.expect("Can't listen");
     info!("Listening on: {}", addr);
 
-    while let Ok((stream, _)) = listener.accept().await {
-        let peer = stream
-            .peer_addr()
-            .expect("connected streams should have a peer address");
+    while let Ok((stream, peer)) = listener.accept().await {
         info!("Peer address: {}", peer);
-
         tokio::spawn(handle_connection(peer, stream));
     }
 }

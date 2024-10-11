@@ -9,6 +9,7 @@
 //! performing handshakes, reading frames, parsing masks, handling opcodes and internal payload.
 //!
 
+mod compress;
 mod connection;
 pub mod error;
 pub mod event;
@@ -19,4 +20,6 @@ mod read;
 mod request;
 pub mod server;
 pub mod split;
+pub mod stream;
+mod tests;
 mod write;

@@ -7,7 +7,7 @@ use tokio::select;
 use tokio::time::{interval, Duration};
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr, None).await {
+    match connect_async(addr, Some("ca.crt")).await {
         Ok(mut ws_connection) => {
             let mut ticker = interval(Duration::from_secs(5));
             // it will be used for closing the connection
@@ -54,7 +54,7 @@ async fn handle_connection(addr: &str) {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    handle_connection("ws://localhost:9002").await;
+    handle_connection("wss://localhost:9002").await;
 }
 
 fn generate_random_string() -> String {

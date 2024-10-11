@@ -1,10 +1,10 @@
 use crate::error::Error;
 use crate::frame::{Frame, OpCode, MAX_PAYLOAD_SIZE};
 use crate::message::Message;
+use crate::stream::SocketFlowStream;
 use crate::write::Writer;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, BufReader, ReadHalf};
-use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
@@ -16,7 +16,7 @@ pub(crate) struct FragmentedMessage {
 }
 
 pub struct ReadStream {
-    buf_reader: BufReader<ReadHalf<TcpStream>>,
+    buf_reader: BufReader<ReadHalf<SocketFlowStream>>,
     fragmented_message: Option<FragmentedMessage>,
     pub read_tx: Sender<Result<Message, Error>>,
     writer: Arc<Mutex<Writer>>,
@@ -24,7 +24,7 @@ pub struct ReadStream {
 
 impl ReadStream {
     pub fn new(
-        read: BufReader<ReadHalf<TcpStream>>,
+        read: BufReader<ReadHalf<SocketFlowStream>>,
         read_tx: Sender<Result<Message, Error>>,
         writer: Arc<Mutex<Writer>>,
     ) -> Self {

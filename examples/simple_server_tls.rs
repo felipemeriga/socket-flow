@@ -1,16 +1,33 @@
 use futures::StreamExt;
-use log::*;
+use log::{error, info};
+use pki_types::{CertificateDer, PrivateKeyDer};
+use rustls_pemfile::{certs, private_key};
 use socket_flow::event::{Event, ID};
 use socket_flow::server::start_server;
+use rustls::ServerConfig;
 use socket_flow::split::WSWriter;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io;
+use std::io::{BufReader, ErrorKind};
+use std::path::Path;
+use std::sync::Arc;
 
-#[tokio::main]
-async fn main() {
-    env_logger::init();
+fn load_certs(path: &Path) -> io::Result<Vec<CertificateDer<'static>>> {
+    certs(&mut BufReader::new(File::open(path)?)).collect()
+}
 
-    let port: u16 = 8080;
-    match start_server(port, None).await {
+fn load_key(path: &Path) -> io::Result<PrivateKeyDer<'static>> {
+    Ok(private_key(&mut BufReader::new(File::open(path)?))
+        .unwrap()
+        .ok_or(io::Error::new(
+            ErrorKind::Other,
+            "no private key found".to_string(),
+        ))?)
+}
+
+async fn run_server(port: u16, config: Arc<ServerConfig>) {
+    match start_server(8080, Some(config)).await {
         Ok(mut event_receiver) => {
             let mut clients: HashMap<ID, WSWriter> = HashMap::new();
             info!("Server started on address 127.0.0.1:{}", port);
@@ -39,4 +56,23 @@ async fn main() {
             eprintln!("Could not start the server due to: {:?}", err);
         }
     }
+}
+
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    env_logger::init();
+
+    let certs = load_certs(Path::new("cert.pem"))?;
+    let key = load_key(Path::new("key.pem"))?;
+
+    let config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+
+    let port: u16 = 8080;
+
+    run_server(port, Arc::new(config)).await;
+
+    Ok(())
 }
