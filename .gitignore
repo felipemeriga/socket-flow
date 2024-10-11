@@ -22,6 +22,12 @@ http.txt
 # Server folder for autobahn testsuite results
 autobahn/server/
 
+# SSL Cerificates
+*.pem
+*.crt
+*.key
+*.srl
+*.csr
 
 # autobahn result files
 jq-server-expected.json
