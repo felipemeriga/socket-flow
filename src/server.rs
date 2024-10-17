@@ -33,7 +33,7 @@ pub async fn start_server(
                     let socket_stream = if let Some(config) = tls_config.clone() {
                         let acceptor = TlsAcceptor::from(config);
                         match acceptor.accept(stream).await {
-                            Ok(tls_stream) => SocketFlowStream::Secure(TlsStream::from(tls_stream)),
+                            Ok(tls_stream) => SocketFlowStream::Rustls(TlsStream::from(tls_stream)),
                             Err(err) => {
                                 tx.send(Event::Error(uuid, err.into())).await.unwrap();
                                 continue;
