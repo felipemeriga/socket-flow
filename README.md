@@ -58,6 +58,8 @@ and we also have a plug-and-play option, which you can generate a Websockets ser
 This is a very practical example, because you can have a server with just calling `start_server` function, which returns
 an `EventStream`, for consuming server events, like new connections, messages, errors and disconnections.
 
+You can also find in: [Example](https://github.com/felipemeriga/socket-flow/blob/main/examples/simple_server.rs)
+
 The `start_server` function also accepts a `rustls::ServerConfig` for enabling TLS in your server.
 
 ```rust
@@ -111,7 +113,8 @@ cargo run --color=always --package socket-flow --example simple_server
 ```
 
 ### Echo server
-Here is a echo-server example, that you can also find in: [Example](./examples/echo_server)
+Here is an echo-server example that you can also find in:
+[Example](https://github.com/felipemeriga/socket-flow/blob/main/examples/echo_server.rs)
 
 ```rust
 use futures::StreamExt;
@@ -251,7 +254,7 @@ In this example, the client will try to connect to `ws://127.0.0.1:9002`,
 if the connection is established, it will start sending random strings every 5 seconds into the socket.
 After sending three strings, it will close the connection gracefully and end its execution.
 
-You can check more examples over [Examples](./examples).
+You can check more examples over [Examples](https://github.com/felipemeriga/socket-flow/tree/main/examples).
 
 ## Testing
 
@@ -261,15 +264,22 @@ Also, it has some internal tests, for ensuring reliability.
 
 ## TLS/SSL
 
-For now, this library only accepts [tokio-rustls](https://github.com/rustls/tokio-rustls), as an adapter library
+By default, this library only accepts [tokio-rustls](https://github.com/rustls/tokio-rustls), as an adapter library
 for adding TLS in your client/server implementation with socket-flow.
 
-For checking how to set up TLS in server/client, and finding some examples, go to: [TLS Examples](./TLS.md).
+For checking how to set up TLS in server/client,
+and finding some examples, go to: [TLS Examples](https://github.com/felipemeriga/socket-flow/blob/main/TLS.md).
+
+In regard to `tokio-native-tls`,
+is currently supported but under a feature that needs to be activated.
+You can also check how it works, under the TLS examples link above.
 
 ## References
 
 - [`tungstenite-rs`](https://github.com/snapview/tungstenite-rs)
 - [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite/tree/master)
+- [`tokio-rustls`](https://github.com/rustls/tokio-rustls)
+- [`tokio-native-tls`](https://github.com/tokio-rs/tls)
 
 
 

@@ -1,10 +1,10 @@
 use futures::StreamExt;
 use log::{error, info};
 use pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::ServerConfig;
 use rustls_pemfile::{certs, private_key};
 use socket_flow::event::{Event, ID};
 use socket_flow::server::start_server;
-use rustls::ServerConfig;
 use socket_flow::split::WSWriter;
 use std::collections::HashMap;
 use std::fs::File;

@@ -95,8 +95,8 @@ async fn second_stage_handshake(
 
 /// Used for connecting as a client to a websocket endpoint.
 ///
-/// It basically does the first step of genereating the client key
-/// going to the second step, which is parsing the server reponse,
+/// It basically does the first step of generating the client key
+/// going to the second step, which is parsing the server response,
 /// finally creating the connection, and returning a `WSConnection`
 pub async fn connect_async(addr: &str, ca_file: Option<&str>) -> Result {
     let client_websocket_key = generate_websocket_key();
@@ -136,7 +136,7 @@ pub async fn connect_async(addr: &str, ca_file: Option<&str>) -> Result {
 
         let domain = pki_types::ServerName::try_from(host)?;
         let tls_stream = connector.connect(domain, stream).await?;
-        SocketFlowStream::Secure(TlsStream::from(tls_stream))
+        SocketFlowStream::Rustls(TlsStream::from(tls_stream))
     } else {
         SocketFlowStream::Plain(stream)
     };

@@ -12,6 +12,9 @@ repository = "https://github.com/yourusername/my_crate"
 homepage = "https://github.com/felipemeriga/socket-flow"
 documentation = "https://github.com/felipemeriga/socket-flow"
 
+[features]
+default = [] # rustls as default
+feature-native-tls = ["tokio-native-tls", "native-tls"] # enable native-tls when this feature is enabled
 
 [lib]
 name = "socket_flow"
@@ -38,6 +41,9 @@ rustls = "0.23.13"
 pki-types = { package = "rustls-pki-types", version = "1" }
 rustls-pemfile = "2.2.0"
 webpki-roots = "0.26.6"
+tokio-native-tls = { version = "0.3.1", optional = true }
+native-tls = { version = "0.2.12", optional = true }
+
 
 [[example]]
 name = "echo_server"
