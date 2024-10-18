@@ -9,9 +9,6 @@ In this file, we will discuss how-to set it up using `socket-flow`, showing some
 By default, this library only accepts [tokio-rustls](https://github.com/rustls/tokio-rustls), as an adapter library
 for adding TLS in your client/server implementation with `socket-flow`.
 
-If you want to activate and use `tokio-native-tls`,
-you need to enable a library feature, you can find it in the last section of this page.
-
 ## Self-Signed vs Trusted Certificate 
 
 This library supports self-signed certificates for local development,
@@ -47,7 +44,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{TlsAcceptor, TlsStream};
 
 async fn handle_connection(_: SocketAddr, stream: TlsStream<TcpStream>) {
-    match accept_async(SocketFlowStream::Rustls(stream)).await {
+    match accept_async(SocketFlowStream::Secure(stream)).await {
         Ok(mut ws_connection) => {
             while let Some(result) = ws_connection.next().await {
                 match result {
@@ -251,7 +248,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{TlsAcceptor, TlsStream};
 
 async fn handle_connection(_: SocketAddr, stream: TlsStream<TcpStream>) {
-    match accept_async(SocketFlowStream::Rustls(stream)).await {
+    match accept_async(SocketFlowStream::Secure(stream)).await {
         Ok(mut ws_connection) => {
             while let Some(result) = ws_connection.next().await {
                 match result {
@@ -392,175 +389,3 @@ fn generate_random_string() -> String {
 ```
 
 You can check more examples over [Examples](https://github.com/felipemeriga/socket-flow/tree/main/examples)
-
-## tokio-native-tls
-
-We also support `tokio-native-tls` for server side, but we don't support it for client connections.
-You can activate this feature when importing socket-flow to your dependencies:
-```
-socket-flow = { version = "*", features = ["feature-native-tls"] }
-```
-
-Here is an example of an echo-server using tokio-native-tls:
-```rust
-use futures::StreamExt;
-use log::{error, info};
-use native_tls::Identity;
-use socket_flow::handshake::accept_async;
-use socket_flow::stream::SocketFlowStream;
-use std::fs;
-use std::io::{self, ErrorKind};
-use std::net::{SocketAddr, ToSocketAddrs};
-use tokio::net::{TcpListener, TcpStream};
-use tokio_native_tls::TlsStream;
-
-async fn handle_connection(_: SocketAddr, stream: TlsStream<TcpStream>) {
-    match accept_async(SocketFlowStream::NativeTls(stream)).await {
-        Ok(mut ws_connection) => {
-            while let Some(result) = ws_connection.next().await {
-                match result {
-                    Ok(message) => {
-                        if ws_connection.send_message(message).await.is_err() {
-                            error!("Failed to send message");
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        error!("Received error from the stream: {}", e);
-                        break;
-                    }
-                }
-            }
-        }
-        Err(err) => error!("Error when performing handshake: {}", err),
-    }
-}
-
-#[tokio::main]
-async fn main() -> io::Result<()> {
-    env_logger::init();
-
-    let addr = String::from("127.0.0.1:9002")
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
-
-    let der = fs::read("identity.p12")?;
-    let cert = Identity::from_pkcs12(&der, "mypass")
-        .map_err(|err| io::Error::new(ErrorKind::InvalidInput, err))?;
-    let tls_acceptor = tokio_native_tls::TlsAcceptor::from(
-        native_tls::TlsAcceptor::builder(cert)
-            .build()
-            .map_err(|err| io::Error::new(ErrorKind::InvalidInput, err))?,
-    );
-
-    let listener = TcpListener::bind(&addr).await?;
-
-    while let Ok((stream, peer)) = listener.accept().await {
-        let acceptor = tls_acceptor.clone();
-        info!("Peer address: {}", peer);
-        tokio::spawn(async move {
-            match acceptor.accept(stream).await {
-                Ok(tls_stream) => {
-                    handle_connection(peer, tls_stream).await;
-                }
-                Err(err) => {
-                    error!("TLS handshake failed with {}: {}", peer, err);
-                }
-            }
-        });
-    }
-
-    Ok(())
-}
-```
-
-Different from `tokio-rustls`, this library supports `.p12` extensions for certificates, so let's
-execute an example using a `.p12` file. 
-
-You can first generate a normal certificate, and then convert it to P12:
-
-```shell
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj '/CN=localhost'
-openssl pkcs12 -export -out identity.p12 -inkey key.pem -in cert.pem -passout pass:mypass -aes256 -legacy
-```
-
-You can run this example, cloning the repo, and executing the command:
-```shell
-cargo run --package socket-flow --features feature-native-tls --example echo_server_native_tls
-```
-
-Also, there is the option of using `.pem` certificate extensions:
-```rust
-use futures::StreamExt;
-use log::{error, info};
-use native_tls::Identity;
-use socket_flow::handshake::accept_async;
-use socket_flow::stream::SocketFlowStream;
-use std::fs;
-use std::io::{self, ErrorKind};
-use std::net::{SocketAddr, ToSocketAddrs};
-use tokio::net::{TcpListener, TcpStream};
-use tokio_native_tls::TlsStream;
-
-async fn handle_connection(_: SocketAddr, stream: TlsStream<TcpStream>) {
-    match accept_async(SocketFlowStream::NativeTls(stream)).await {
-        Ok(mut ws_connection) => {
-            while let Some(result) = ws_connection.next().await {
-                match result {
-                    Ok(message) => {
-                        if ws_connection.send_message(message).await.is_err() {
-                            error!("Failed to send message");
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        error!("Received error from the stream: {}", e);
-                        break;
-                    }
-                }
-            }
-        }
-        Err(err) => error!("Error when performing handshake: {}", err),
-    }
-}
-
-#[tokio::main]
-async fn main() -> io::Result<()> {
-    env_logger::init();
-
-    let addr = String::from("127.0.0.1:9002")
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
-
-    let cert = fs::read("cert.pem")?;
-    let key = fs::read("key.pem")?;
-    let cert = Identity::from_pkcs8(&cert, &key)
-        .map_err(|err| io::Error::new(ErrorKind::InvalidInput, err))?;
-    let tls_acceptor = tokio_native_tls::TlsAcceptor::from(
-        native_tls::TlsAcceptor::builder(cert)
-            .build()
-            .map_err(|err| io::Error::new(ErrorKind::InvalidInput, err))?,
-    );
-
-    let listener = TcpListener::bind(&addr).await?;
-
-    while let Ok((stream, peer)) = listener.accept().await {
-        let acceptor = tls_acceptor.clone();
-        info!("Peer address: {}", peer);
-        tokio::spawn(async move {
-            match acceptor.accept(stream).await {
-                Ok(tls_stream) => {
-                    handle_connection(peer, tls_stream).await;
-                }
-                Err(err) => {
-                    error!("TLS handshake failed with {}: {}", peer, err);
-                }
-            }
-        });
-    }
-
-    Ok(())
-}
-```

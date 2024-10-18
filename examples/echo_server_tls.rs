@@ -13,7 +13,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{TlsAcceptor, TlsStream};
 
 async fn handle_connection(_: SocketAddr, stream: TlsStream<TcpStream>) {
-    match accept_async(SocketFlowStream::Rustls(stream)).await {
+    match accept_async(SocketFlowStream::Secure(stream)).await {
         Ok(mut ws_connection) => {
             while let Some(result) = ws_connection.next().await {
                 match result {

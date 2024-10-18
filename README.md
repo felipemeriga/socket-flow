@@ -270,16 +270,11 @@ for adding TLS in your client/server implementation with socket-flow.
 For checking how to set up TLS in server/client,
 and finding some examples, go to: [TLS Examples](https://github.com/felipemeriga/socket-flow/blob/main/TLS.md).
 
-In regard to `tokio-native-tls`,
-is currently supported but under a feature that needs to be activated.
-You can also check how it works, under the TLS examples link above.
-
 ## References
 
 - [`tungstenite-rs`](https://github.com/snapview/tungstenite-rs)
 - [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite/tree/master)
 - [`tokio-rustls`](https://github.com/rustls/tokio-rustls)
-- [`tokio-native-tls`](https://github.com/tokio-rs/tls)
 
 
 

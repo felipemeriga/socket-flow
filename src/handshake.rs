@@ -136,7 +136,7 @@ pub async fn connect_async(addr: &str, ca_file: Option<&str>) -> Result {
 
         let domain = pki_types::ServerName::try_from(host)?;
         let tls_stream = connector.connect(domain, stream).await?;
-        SocketFlowStream::Rustls(TlsStream::from(tls_stream))
+        SocketFlowStream::Secure(TlsStream::from(tls_stream))
     } else {
         SocketFlowStream::Plain(stream)
     };

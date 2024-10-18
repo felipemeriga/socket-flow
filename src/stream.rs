@@ -2,8 +2,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
-#[cfg(feature = "feature-native-tls")]
-use tokio_native_tls::TlsStream as NativeTlsStream;
 use tokio_rustls::TlsStream as RustTlsStream;
 
 // We need to implement AsyncRead and AsyncWrite for SocketFlowStream,
@@ -14,9 +12,7 @@ use tokio_rustls::TlsStream as RustTlsStream;
 // functions that are called inside accept_async recursively.
 pub enum SocketFlowStream {
     Plain(TcpStream),
-    Rustls(RustTlsStream<TcpStream>),
-    #[cfg(feature = "feature-native-tls")]
-    NativeTls(NativeTlsStream<TcpStream>),
+    Secure(RustTlsStream<TcpStream>),
 }
 
 impl AsyncRead for SocketFlowStream {
@@ -27,9 +23,7 @@ impl AsyncRead for SocketFlowStream {
     ) -> Poll<std::io::Result<()>> {
         match self.get_mut() {
             SocketFlowStream::Plain(ref mut s) => Pin::new(s).poll_read(cx, buf),
-            SocketFlowStream::Rustls(s) => Pin::new(s).poll_read(cx, buf),
-            #[cfg(feature = "feature-native-tls")]
-            SocketFlowStream::NativeTls(s) => Pin::new(s).poll_read(cx, buf),
+            SocketFlowStream::Secure(s) => Pin::new(s).poll_read(cx, buf),
         }
     }
 }
@@ -42,18 +36,14 @@ impl AsyncWrite for SocketFlowStream {
     ) -> Poll<Result<usize, std::io::Error>> {
         match self.get_mut() {
             SocketFlowStream::Plain(ref mut s) => Pin::new(s).poll_write(cx, buf),
-            SocketFlowStream::Rustls(s) => Pin::new(s).poll_write(cx, buf),
-            #[cfg(feature = "feature-native-tls")]
-            SocketFlowStream::NativeTls(s) => Pin::new(s).poll_write(cx, buf),
+            SocketFlowStream::Secure(s) => Pin::new(s).poll_write(cx, buf),
         }
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         match self.get_mut() {
             SocketFlowStream::Plain(ref mut s) => Pin::new(s).poll_flush(cx),
-            SocketFlowStream::Rustls(s) => Pin::new(s).poll_flush(cx),
-            #[cfg(feature = "feature-native-tls")]
-            SocketFlowStream::NativeTls(s) => Pin::new(s).poll_flush(cx),
+            SocketFlowStream::Secure(s) => Pin::new(s).poll_flush(cx),
         }
     }
 
@@ -63,9 +53,7 @@ impl AsyncWrite for SocketFlowStream {
     ) -> Poll<Result<(), std::io::Error>> {
         match self.get_mut() {
             SocketFlowStream::Plain(ref mut s) => Pin::new(s).poll_shutdown(cx),
-            SocketFlowStream::Rustls(s) => Pin::new(s).poll_shutdown(cx),
-            #[cfg(feature = "feature-native-tls")]
-            SocketFlowStream::NativeTls(s) => Pin::new(s).poll_shutdown(cx),
+            SocketFlowStream::Secure(s) => Pin::new(s).poll_shutdown(cx),
         }
     }
 }
