@@ -2,7 +2,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
-use tokio_rustls::TlsStream;
+use tokio_rustls::TlsStream as RustTlsStream;
 
 // We need to implement AsyncRead and AsyncWrite for SocketFlowStream,
 // because when we split a TlsStream, it returns a ReadHalf<T>, WriteHalf<T>
@@ -12,7 +12,7 @@ use tokio_rustls::TlsStream;
 // functions that are called inside accept_async recursively.
 pub enum SocketFlowStream {
     Plain(TcpStream),
-    Secure(TlsStream<TcpStream>),
+    Secure(RustTlsStream<TcpStream>),
 }
 
 impl AsyncRead for SocketFlowStream {

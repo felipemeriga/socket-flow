@@ -53,7 +53,7 @@ async fn main() -> io::Result<()> {
     let addr = String::from("127.0.0.1:9002")
         .to_socket_addrs()?
         .next()
-        .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
+        .ok_or_else(|| io::Error::from(ErrorKind::AddrNotAvailable))?;
 
     let certs = load_certs(Path::new("cert.pem"))?;
     let key = load_key(Path::new("key.pem"))?;
@@ -61,7 +61,7 @@ async fn main() -> io::Result<()> {
     let config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+        .map_err(|err| io::Error::new(ErrorKind::InvalidInput, err))?;
 
     let acceptor = TlsAcceptor::from(Arc::new(config));
 

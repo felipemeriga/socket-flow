@@ -2,11 +2,11 @@
 
 ## Introduction
 
-This library supports TLS on clients/servers, to provide secure encrypted TCP packets for websockets 
+This library supports TLS on clients/servers to provide secure encrypted TCP packets for websockets 
 stream.
-In this file, we will discuss how to setup it using `socket-flow`, showing some server/client examples.
+In this file, we will discuss how-to set it up using `socket-flow`, showing some server/client examples.
 
-For now, this library only accepts [tokio-rustls](https://github.com/rustls/tokio-rustls), as an adapter library
+By default, this library only accepts [tokio-rustls](https://github.com/rustls/tokio-rustls), as an adapter library
 for adding TLS in your client/server implementation with `socket-flow`.
 
 ## Self-Signed vs Trusted Certificate 
@@ -25,7 +25,8 @@ We will now present some examples and how to set up TLS.
 
 ## Server Example (Self-Signed)
 
-Here is an echo-server TLS example, that you can also find in: [Example](./examples/echo_server_tls.rs)
+Here is an echo-server TLS example that you can also find in:
+[Example](https://github.com/felipemeriga/socket-flow/blob/main/examples/echo_server_tls.rs)
 
 ```rust
 use futures::StreamExt;
@@ -83,7 +84,7 @@ async fn main() -> io::Result<()> {
     let addr = String::from("127.0.0.1:9002")
         .to_socket_addrs()?
         .next()
-        .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
+        .ok_or_else(|| io::Error::from(ErrorKind::AddrNotAvailable))?;
 
     let certs = load_certs(Path::new("cert.pem"))?;
     let key = load_key(Path::new("key.pem"))?;
@@ -91,7 +92,7 @@ async fn main() -> io::Result<()> {
     let config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+        .map_err(|err| io::Error::new(ErrorKind::InvalidInput, err))?;
 
     let acceptor = TlsAcceptor::from(Arc::new(config));
 
@@ -130,7 +131,7 @@ cargo run --color=always --package socket-flow --example echo_server_tls
 ## Server Example (Trusted Certificate)
 
 If you are planning to use trusted certificates on the server,
-you can use the same example for self-signed, the setup will be the same.
+you can use the same example for self-signed; the setup will be the same.
 
 ## Client Example (Trusted Certificate)
 
@@ -184,7 +185,7 @@ fn generate_random_string() -> String {
 
 Like we mentioned in the beginning of this guide, if you are using self-signed certificates for a server, the client
 should also have the certificate, because as the certificate is not trusted by a valid CA,
-your client code won't be able to validate the server certificate, unless you provide it directly to the client.
+your client code won't be able to validate the server certificate unless you provide it directly to the client.
 
 For this example, we will need to create some certificates,
 first creating a file called: `server_cert_config.cnf`, adding the following content:
@@ -206,7 +207,7 @@ DNS.1 = localhost
 IP.1 = 127.0.0.1
 ```
 
-This file will be created, to set some configs on the server certificate.
+This file will be created to set some configs on the server certificate.
 Now, for creating all the certificates, execute the following shell script:
 
 ```shell
@@ -387,4 +388,4 @@ fn generate_random_string() -> String {
 }
 ```
 
-You can check more examples over [Examples](./examples)
+You can check more examples over [Examples](https://github.com/felipemeriga/socket-flow/tree/main/examples)
