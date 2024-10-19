@@ -1,6 +1,5 @@
 use crate::error::Error;
 
-pub const MAX_PAYLOAD_SIZE: usize = 16 * 1024 * 1024; // 16MB
 #[derive(Debug, Clone, PartialEq)]
 pub enum OpCode {
     Continue,

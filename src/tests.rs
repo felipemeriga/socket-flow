@@ -140,7 +140,7 @@ mod tests {
         });
 
         // Call the connect_async function for connecting to the server
-        connect_async("ws://127.0.0.1:9005", None).await?;
+        connect_async("ws://127.0.0.1:9005").await?;
 
         server.await?;
 
@@ -157,7 +157,7 @@ mod tests {
 
         tokio::spawn(async move {
             // Connect to the endpoint and send a simple text message
-            let mut client_connection = connect_async("ws://127.0.0.1:9006", None).await.unwrap();
+            let mut client_connection = connect_async("ws://127.0.0.1:9006").await.unwrap();
             client_connection
                 .send(String::from(MESSAGE).into_bytes())
                 .await

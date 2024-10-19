@@ -8,14 +8,19 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use std::vec;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
+use crate::config::WebSocketConfig;
 
 // const CLOSE_TIMEOUT: u64 = 5;
+// TODO - Instead of using writer and read_rx, use directly WSRead and WSWrite,
+// and return  the struct own attributes when splitting it
 pub struct WSConnection {
     writer: Arc<Mutex<Writer>>,
     read_rx: ReceiverStream<Result<Message, Error>>,
+    web_socket_config: WebSocketConfig,
 }
 
 // WSConnection has the read_rx attribute, which is already a ReceiverStream
@@ -39,10 +44,12 @@ impl WSConnection {
     pub fn new(
         write_half: Arc<Mutex<Writer>>,
         read_rx: ReceiverStream<Result<Message, Error>>,
+        web_socket_config: WebSocketConfig,
     ) -> Self {
         Self {
             writer: write_half,
             read_rx,
+            web_socket_config,
         }
     }
 
@@ -50,7 +57,7 @@ impl WSConnection {
     /// and `WSWriter`, for writing data into the socket.
     /// It's a good option when you need to work with both in separate tasks or functions
     pub fn split(self) -> (WSReader, WSWriter) {
-        let writer = WSWriter::new(self.writer);
+        let writer = WSWriter::new(self.writer, self.web_socket_config);
         let reader = WSReader::new(self.read_rx);
         (reader, writer)
     }
@@ -61,7 +68,7 @@ impl WSConnection {
     /// through the socket, and waits until it receives the confirmation in a channel
     /// executing it inside a timeout, to avoid a long waiting time
     pub async fn close_connection(&mut self) -> Result<(), Error> {
-        self.write_frame(Frame::new(true, OpCode::Close, Vec::new()))
+        self.write_frames(vec![Frame::new(true, OpCode::Close, Vec::new())])
             .await?;
 
         sleep(Duration::from_millis(500)).await;
@@ -75,54 +82,76 @@ impl WSConnection {
     }
 
     pub async fn send_message(&mut self, message: Message) -> Result<(), Error> {
-        self.write_frame(message.to_frame(true)).await
+        self.write_message(message).await
     }
 
     // This function will be used to send general data as a Vector of bytes, and by default will
     // be sent as a text opcode
     pub async fn send(&mut self, data: Vec<u8>) -> Result<(), Error> {
-        self.write_frame(Frame::new(true, OpCode::Text, data)).await
+        self.write_message(Message::Text(String::from_utf8(data)?)).await
     }
 
     pub async fn send_as_binary(&mut self, data: Vec<u8>) -> Result<(), Error> {
-        self.write_frame(Frame::new(true, OpCode::Binary, data))
+        self.write_message(Message::Binary(data))
             .await
     }
 
+    pub async fn send_as_text(&mut self, data: String) -> Result<(), Error> {
+        self.write_message(Message::Text(data)).await
+    }
+
+
     // It will send a ping frame through the socket
     pub async fn send_ping(&mut self) -> Result<(), Error> {
-        self.write_frame(Frame::new(true, OpCode::Ping, Vec::new()))
+        self.write_frames(vec![Frame::new(true, OpCode::Ping, Vec::new())])
             .await
     }
 
     // This function can be used to send large payloads, that will be divided in chunks using fragmented
     // messages, and Continue opcode
-    pub async fn send_large_data_fragmented(&mut self, data: Vec<u8>) -> Result<(), Error> {
-        // We can set the MAX_FRAGMENT_SIZE to 65536 bytes(64KB), which is the maximum
-        // size of a TCP packet. As TCP is based in packets, and HTTP and WS works on the top of TCP, any
-        // fragment greater than 64KB would still work, since it will be divided into packets
-        const MAX_FRAGMENT_SIZE: usize = 64 * 1024;
+    pub async fn send_large_data_fragmented(&mut self, data: Vec<u8>, fragment_size: usize) -> Result<(), Error> {
+        // Each fragment size will be limited by max_frame_size config,
+        // that had been given by the user,
+        // or it will use the default max frame size which is 16 mb.
+        if fragment_size > self.web_socket_config.max_frame_size.unwrap_or_default() {
+            return Err(Error::CustomFragmentSizeExceeded(fragment_size, self.web_socket_config.max_frame_size.unwrap_or_default()));
+        }
 
-        let chunks = data.chunks(MAX_FRAGMENT_SIZE);
+        if data.len() > self.web_socket_config.max_message_size.unwrap_or_default() {
+            return Err(Error::MaxMessageSize);
+        }
+
+        let chunks = data.chunks(fragment_size);
         let total_chunks = chunks.len();
 
-        for (i, chunk) in chunks.enumerate() {
-            let is_final = i == total_chunks - 1;
+            for (i, chunk) in chunks.enumerate() {
+                let is_final = i == total_chunks - 1;
+                let opcode = if i == 0 {
+                    OpCode::Text
+                } else {
+                    OpCode::Continue
+                };
 
-            let opcode = if i == 0 {
-                OpCode::Text
-            } else {
-                OpCode::Continue
-            };
-
-            self.write_frame(Frame::new(is_final, opcode, Vec::from(chunk)))
-                .await?
-        }
+                self.write_frames(vec![Frame::new(is_final, opcode, Vec::from(chunk))])
+                    .await?
+            }
 
         Ok(())
     }
 
-    pub async fn write_frame(&mut self, frame: Frame) -> Result<(), Error> {
-        self.writer.lock().await.write_frame(frame).await
+
+    async fn write_message(&mut self, message: Message) -> Result<(), Error> {
+        if message.as_binary().len() > self.web_socket_config.max_message_size.unwrap_or_default() {
+            return Err(Error::MaxMessageSize);
+        }
+
+        self.write_frames(message.to_frames(self.web_socket_config.max_frame_size.unwrap_or_default())).await
+    }
+
+    async fn write_frames(&mut self, frames: Vec<Frame>) -> Result<(), Error> {
+        for frame in frames {
+            self.writer.lock().await.write_frame(frame).await?
+        }
+        Ok(())
     }
 }
