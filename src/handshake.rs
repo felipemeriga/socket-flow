@@ -81,7 +81,7 @@ async fn second_stage_handshake(
     // ReadStream will be running on a separate task, capturing all the incoming frames from the connection, and broadcasting them through this
     // tokio mpsc channel. Therefore, it can be consumed by the end-user of this library
     let (read_tx, read_rx) = channel::<std::result::Result<Message, Error>>(20);
-    let mut read_stream = ReadStream::new(buf_reader, read_tx, stream_writer, config);
+    let mut read_stream = ReadStream::new(buf_reader, read_tx, stream_writer, config.clone());
 
     let connection_writer = writer.clone();
     // Transforming the receiver of the channel into a Stream, so we could leverage using
@@ -91,7 +91,7 @@ async fn second_stage_handshake(
     // The WSConnection is the structure that will be delivered to the end-user, which contains
     // a stream of frames, for consuming the incoming frames, and methods for writing frames into
     // the socket
-    let ws_connection = WSConnection::new(connection_writer, receiver_stream);
+    let ws_connection = WSConnection::new(connection_writer, receiver_stream, config);
 
     // Spawning poll_messages which is the method for reading the frames from the socket concurrently,
     // because we need this method running, while the end-user can have

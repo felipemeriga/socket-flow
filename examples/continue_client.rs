@@ -9,7 +9,7 @@ async fn handle_connection(addr: &str) {
             let my_random_string = generate_random_string();
             info!("Sending random string: {}", my_random_string);
             if ws_connection
-                .send_large_data_fragmented(Vec::from(my_random_string))
+                .send_large_data_fragmented(Vec::from(my_random_string), 1)
                 .await
                 .is_err()
             {

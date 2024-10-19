@@ -71,8 +71,14 @@ pub enum Error {
     #[error("Control frame with invalid payload size, can be greater than 125")]
     ControlFramePayloadSize,
 
+    #[error("fragment_size: `{0}` can't be greater than max_frame_size: `{0}`")]
+    CustomFragmentSizeExceeded(usize, usize),
+
     #[error("Max frame size reached")]
     MaxFrameSize,
+
+    #[error("Max message size reached")]
+    MaxMessageSize,
 
     // Fragmentation Errors
     #[error("Invalid frame while there is a fragmented message in progress")]

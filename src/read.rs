@@ -62,7 +62,7 @@ impl ReadStream {
                         }
                         // Per WebSockets RFC, the Continue opcode is specifically meant for continuation frames of a fragmented message
                         // The first frame of a fragmented message should contain either a text(0x1) or binary(0x2) opcode.
-                        // From the second frame to the last frame but one, the opcode should be set to continue (0x0)
+                        // From the second frame to the last frame but one, the opcode should be set to continue (0x0),
                         // and the fin set to 0. The last frame should have the opcode set to continue and fin set to 1
                         OpCode::Continue => {
                             if let Some(ref mut fragmented_message) = self.fragmented_message {
@@ -70,11 +70,14 @@ impl ReadStream {
                                     .fragments
                                     .extend_from_slice(&frame.payload);
 
+                                if fragmented_message.fragments.len() > self.config.max_message_size.unwrap_or_default() {
+                                    Err(Error::MaxMessageSize)?;
+                                }
+
                                 let fragmented_message_clone = fragmented_message.clone();
                                 // If it's the final fragment, then you can process the complete message here.
                                 // You could move the message to somewhere else as well.
                                 if frame.final_fragment {
-                                    fragmented_message.fragments = vec![];
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
 
