@@ -1,3 +1,4 @@
+use crate::config::{ClientConfig, WebSocketConfig};
 use crate::connection::WSConnection;
 use crate::error::Error;
 use crate::message::Message;
@@ -43,19 +44,33 @@ pub type Result = std::result::Result<WSConnection, Error>;
 /// going to the second step, which is sending the acceptance response,
 /// finally creating the connection, and returning a `WSConnection`
 pub async fn accept_async(stream: SocketFlowStream) -> Result {
+    accept_async_with_config(stream, None).await
+}
+
+pub async fn accept_async_with_config(
+    stream: SocketFlowStream,
+    config: Option<WebSocketConfig>,
+) -> Result {
     let (reader, mut write_half) = split(stream);
     let mut buf_reader = BufReader::new(reader);
 
     parse_handshake(&mut buf_reader, &mut write_half).await?;
 
     // Identify permessage-deflate for enabling compression
-    second_stage_handshake(buf_reader, write_half, WriterKind::Server).await
+    second_stage_handshake(
+        buf_reader,
+        write_half,
+        WriterKind::Server,
+        config.unwrap_or_default(),
+    )
+    .await
 }
 
 async fn second_stage_handshake(
     buf_reader: BufReader<ReadHalf<SocketFlowStream>>,
     write_half: WriteHalf<SocketFlowStream>,
     kind: WriterKind,
+    config: WebSocketConfig,
 ) -> Result {
     // This writer instance would be used for writing frames into the socket.
     // Since it's going to be used by two different instances, we need to wrap it through an Arc
@@ -66,7 +81,7 @@ async fn second_stage_handshake(
     // ReadStream will be running on a separate task, capturing all the incoming frames from the connection, and broadcasting them through this
     // tokio mpsc channel. Therefore, it can be consumed by the end-user of this library
     let (read_tx, read_rx) = channel::<std::result::Result<Message, Error>>(20);
-    let mut read_stream = ReadStream::new(buf_reader, read_tx, stream_writer);
+    let mut read_stream = ReadStream::new(buf_reader, read_tx, stream_writer, config);
 
     let connection_writer = writer.clone();
     // Transforming the receiver of the channel into a Stream, so we could leverage using
@@ -98,13 +113,18 @@ async fn second_stage_handshake(
 /// It basically does the first step of generating the client key
 /// going to the second step, which is parsing the server response,
 /// finally creating the connection, and returning a `WSConnection`
-pub async fn connect_async(addr: &str, ca_file: Option<&str>) -> Result {
+pub async fn connect_async(addr: &str) -> Result {
+    connect_async_with_config(addr, None).await
+}
+
+pub async fn connect_async_with_config(addr: &str, client_config: Option<ClientConfig>) -> Result {
     let client_websocket_key = generate_websocket_key();
 
     let (request, hostname, host, use_tls) = parse_to_http_request(addr, &client_websocket_key)?;
 
     let stream = TcpStream::connect(hostname).await?;
 
+    let maybe_ca_file = client_config.clone().unwrap_or_default().ca_file;
     let maybe_tls = if use_tls {
         // Creating a cert store, to inject the TLS certificates
         let mut root_cert_store = rustls::RootCertStore::empty();
@@ -114,8 +134,8 @@ pub async fn connect_async(addr: &str, ca_file: Option<&str>) -> Result {
         // when connecting to it.
         // Since the server has a self-signed cert, the only way of this library validating
         // the cert is adding as an argument of the connect_async function
-        if let Some(file) = ca_file {
-            let mut pem = SyncBufReader::new(File::open(Path::new(file))?);
+        if let Some(file) = maybe_ca_file {
+            let mut pem = SyncBufReader::new(File::open(Path::new(file.as_str()))?);
             for cert in rustls_pemfile::certs(&mut pem) {
                 root_cert_store.add(cert?).unwrap();
             }
@@ -171,7 +191,13 @@ pub async fn connect_async(addr: &str, ca_file: Option<&str>) -> Result {
         return Err(Error::InvalidAcceptKey);
     }
 
-    second_stage_handshake(buf_reader, write_half, WriterKind::Client).await
+    second_stage_handshake(
+        buf_reader,
+        write_half,
+        WriterKind::Client,
+        client_config.unwrap_or_default().web_socket_config,
+    )
+    .await
 }
 
 pub(crate) fn generate_websocket_accept_value(key: String) -> String {

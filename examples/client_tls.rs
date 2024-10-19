@@ -2,12 +2,16 @@ use futures::StreamExt;
 use log::*;
 use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
-use socket_flow::handshake::connect_async;
+use socket_flow::config::ClientConfig;
+use socket_flow::handshake::connect_async_with_config;
 use tokio::select;
 use tokio::time::{interval, Duration};
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr, Some("ca.crt")).await {
+    let mut client_config = ClientConfig::default();
+    client_config.ca_file = Some(String::from("ca.crt"));
+
+    match connect_async_with_config(addr, Some(client_config)).await {
         Ok(mut ws_connection) => {
             let mut ticker = interval(Duration::from_secs(5));
             // it will be used for closing the connection

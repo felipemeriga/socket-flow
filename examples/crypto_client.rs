@@ -3,7 +3,7 @@ use log::*;
 use socket_flow::handshake::connect_async;
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr, None).await {
+    match connect_async(addr).await {
         Ok(mut ws_connection) => {
             while let Some(result) = ws_connection.next().await {
                 match result {

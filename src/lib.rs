@@ -10,6 +10,7 @@
 //!
 
 mod compress;
+pub mod config;
 mod connection;
 pub mod error;
 pub mod event;

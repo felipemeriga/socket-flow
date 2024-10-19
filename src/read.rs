@@ -1,5 +1,6 @@
+use crate::config::WebSocketConfig;
 use crate::error::Error;
-use crate::frame::{Frame, OpCode, MAX_PAYLOAD_SIZE};
+use crate::frame::{Frame, OpCode};
 use crate::message::Message;
 use crate::stream::SocketFlowStream;
 use crate::write::Writer;
@@ -20,6 +21,7 @@ pub struct ReadStream {
     fragmented_message: Option<FragmentedMessage>,
     pub read_tx: Sender<Result<Message, Error>>,
     writer: Arc<Mutex<Writer>>,
+    config: WebSocketConfig,
 }
 
 impl ReadStream {
@@ -27,6 +29,7 @@ impl ReadStream {
         read: BufReader<ReadHalf<SocketFlowStream>>,
         read_tx: Sender<Result<Message, Error>>,
         writer: Arc<Mutex<Writer>>,
+        config: WebSocketConfig,
     ) -> Self {
         let fragmented_message = None;
         Self {
@@ -34,6 +37,7 @@ impl ReadStream {
             fragmented_message,
             read_tx,
             writer,
+            config,
         }
     }
 
@@ -185,8 +189,8 @@ impl ReadStream {
             length = u64::from_be_bytes(be_bytes) as usize;
         }
 
-        if length > MAX_PAYLOAD_SIZE {
-            Err(Error::PayloadSize)?;
+        if length > self.config.max_frame_size.unwrap_or_default() {
+            Err(Error::MaxFrameSize)?;
         }
 
         // According to Websockets RFC, client should always send masked frames,
@@ -216,7 +220,7 @@ impl ReadStream {
             Err(_e) => Err(_e)?,   // Reading from the socket timed out
         }
 
-        // Unmasking
+        // Unmasking,
         // According to the WebSocket protocol, all frames sent from the client to the server must be
         // masked by a four-byte value, which is often random. This "masking key" is part of the frame
         // along with the payload data and helps to prevent specific bytes from being discernible on the
