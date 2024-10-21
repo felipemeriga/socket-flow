@@ -45,7 +45,7 @@ impl Message {
             Message::Binary(data) => data,
         };
         
-        if payload.len() == 0 {
+        if payload.is_empty() {
             return vec![Frame{
                 final_fragment: true,
                 opcode,
