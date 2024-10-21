@@ -44,6 +44,14 @@ impl Message {
             Message::Text(text) => text.into_bytes(),
             Message::Binary(data) => data,
         };
+        
+        if payload.len() == 0 {
+            return vec![Frame{
+                final_fragment: true,
+                opcode,
+                payload,
+            }]
+        }
 
         let mut frames = Vec::new();
         for chunk in payload.chunks(max_frame_size) {
