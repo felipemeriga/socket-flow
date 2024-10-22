@@ -97,7 +97,7 @@ impl WSWriter {
     ) -> Result<(), Error> {
         // Each fragment size will be limited by max_frame_size config,
         // that had been given by the user,
-        // or it will use the default max frame size which is 16 mb.
+        // or it will use the default max frame size which is 16 MiB.
         if fragment_size > self.web_socket_config.max_frame_size.unwrap_or_default() {
             return Err(Error::CustomFragmentSizeExceeded(
                 fragment_size,

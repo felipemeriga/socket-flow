@@ -198,7 +198,7 @@ impl ReadStream {
             Err(Error::MaxFrameSize)?;
         }
 
-        // According to Websockets RFC, client should always send masked frames,
+        // According to Websockets RFC, a client should always send masked frames,
         // while frames sent from server to a client are not masked
         let mask = if masked {
             let mut mask = [0u8; 4];

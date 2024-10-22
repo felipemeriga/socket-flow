@@ -43,11 +43,12 @@ pub type Result = std::result::Result<WSConnection, Error>;
 ///
 /// It basically does the first step of verifying the client key in the request
 /// going to the second step, which is sending the acceptance response,
-/// finally creating the connection, and returning a `WSConnection`
+/// finally creating the connection, and returning a `WSConnection`.
 pub async fn accept_async(stream: SocketFlowStream) -> Result {
     accept_async_with_config(stream, None).await
 }
 
+/// Same as accept_async, with an additional argument for custom websocket connection configurations.
 pub async fn accept_async_with_config(
     stream: SocketFlowStream,
     config: Option<WebSocketConfig>,
@@ -116,11 +117,12 @@ async fn second_stage_handshake(
 ///
 /// It basically does the first step of generating the client key
 /// going to the second step, which is parsing the server response,
-/// finally creating the connection, and returning a `WSConnection`
+/// finally creating the connection, and returning a `WSConnection`.
 pub async fn connect_async(addr: &str) -> Result {
     connect_async_with_config(addr, None).await
 }
 
+/// Same as connect_async, with an additional argument for custom websocket connection configurations.
 pub async fn connect_async_with_config(addr: &str, client_config: Option<ClientConfig>) -> Result {
     let client_websocket_key = generate_websocket_key();
 
