@@ -70,7 +70,9 @@ impl ReadStream {
                                     .fragments
                                     .extend_from_slice(&frame.payload);
 
-                                if fragmented_message.fragments.len() > self.config.max_message_size.unwrap_or_default() {
+                                if fragmented_message.fragments.len()
+                                    > self.config.max_message_size.unwrap_or_default()
+                                {
                                     Err(Error::MaxMessageSize)?;
                                 }
 

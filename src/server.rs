@@ -1,12 +1,12 @@
+use crate::config::ServerConfig;
 use crate::event::{generate_new_uuid, Event, EventStream};
-use crate::handshake::{accept_async_with_config};
+use crate::handshake::accept_async_with_config;
 use crate::stream::SocketFlowStream;
 use futures::StreamExt;
 use std::io::Error;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_rustls::{TlsAcceptor, TlsStream};
-use crate::config::ServerConfig;
 
 /// A ready to use websockets server
 ///
@@ -44,13 +44,16 @@ pub async fn start_server_with_config(
                         SocketFlowStream::Plain(stream)
                     };
 
-                    let ws_connection = match accept_async_with_config(socket_stream, web_socket_config.clone()).await {
-                        Ok(conn) => conn,
-                        Err(err) => {
-                            tx.send(Event::Error(uuid, err)).await.unwrap();
-                            continue;
-                        }
-                    };
+                    let ws_connection =
+                        match accept_async_with_config(socket_stream, web_socket_config.clone())
+                            .await
+                        {
+                            Ok(conn) => conn,
+                            Err(err) => {
+                                tx.send(Event::Error(uuid, err)).await.unwrap();
+                                continue;
+                            }
+                        };
                     // splitting the connection, so we could monitor incoming messages into a
                     // separate task, and handover the writer to the end-user
                     let (mut ws_reader, ws_writer) = ws_connection.split();

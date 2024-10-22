@@ -44,20 +44,24 @@ impl Message {
             Message::Text(text) => text.into_bytes(),
             Message::Binary(data) => data,
         };
-        
+
         if payload.is_empty() {
-            return vec![Frame{
+            return vec![Frame {
                 final_fragment: true,
                 opcode,
                 payload,
-            }]
+            }];
         }
 
         let mut frames = Vec::new();
         for chunk in payload.chunks(max_frame_size) {
             frames.push(Frame {
                 final_fragment: false,
-                opcode: if frames.is_empty() { opcode.clone() } else { OpCode::Continue },
+                opcode: if frames.is_empty() {
+                    opcode.clone()
+                } else {
+                    OpCode::Continue
+                },
                 payload: chunk.to_vec(),
             });
         }

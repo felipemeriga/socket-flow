@@ -3,8 +3,9 @@ use log::{error, info};
 use pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::ServerConfig as RustlsConfig;
 use rustls_pemfile::{certs, private_key};
+use socket_flow::config::ServerConfig;
 use socket_flow::event::{Event, ID};
-use socket_flow::server::{start_server_with_config};
+use socket_flow::server::start_server_with_config;
 use socket_flow::split::WSWriter;
 use std::collections::HashMap;
 use std::fs::File;
@@ -12,7 +13,6 @@ use std::io;
 use std::io::{BufReader, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
-use socket_flow::config::{ServerConfig};
 
 fn load_certs(path: &Path) -> io::Result<Vec<CertificateDer<'static>>> {
     certs(&mut BufReader::new(File::open(path)?)).collect()

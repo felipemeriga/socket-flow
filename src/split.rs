@@ -1,3 +1,4 @@
+use crate::config::WebSocketConfig;
 use crate::error::Error;
 use crate::frame::{Frame, OpCode};
 use crate::message::Message;
@@ -10,7 +11,6 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
-use crate::config::WebSocketConfig;
 
 pub struct WSReader {
     read_rx: ReceiverStream<Result<Message, Error>>,
@@ -33,12 +33,15 @@ impl Stream for WSReader {
 #[derive(Clone)]
 pub struct WSWriter {
     writer: Arc<Mutex<Writer>>,
-    web_socket_config: WebSocketConfig
+    web_socket_config: WebSocketConfig,
 }
 
 impl WSWriter {
     pub fn new(writer: Arc<Mutex<Writer>>, web_socket_config: WebSocketConfig) -> Self {
-        Self { writer, web_socket_config }
+        Self {
+            writer,
+            web_socket_config,
+        }
     }
 
     /// This function will be used for closing the connection between two instances, mainly it will
@@ -67,12 +70,12 @@ impl WSWriter {
     // This function will be used to send general data as a Vector of bytes, and by default will
     // be sent as a text opcode
     pub async fn send(&mut self, data: Vec<u8>) -> Result<(), Error> {
-        self.write_message(Message::Text(String::from_utf8(data)?)).await
+        self.write_message(Message::Text(String::from_utf8(data)?))
+            .await
     }
 
     pub async fn send_as_binary(&mut self, data: Vec<u8>) -> Result<(), Error> {
-        self.write_message(Message::Binary(data))
-            .await
+        self.write_message(Message::Binary(data)).await
     }
 
     pub async fn send_as_text(&mut self, data: String) -> Result<(), Error> {
@@ -87,12 +90,19 @@ impl WSWriter {
 
     // This function can be used to send large payloads, that will be divided in chunks using fragmented
     // messages, and Continue opcode
-    pub async fn send_large_data_fragmented(&mut self, data: Vec<u8>, fragment_size: usize) -> Result<(), Error> {
+    pub async fn send_large_data_fragmented(
+        &mut self,
+        data: Vec<u8>,
+        fragment_size: usize,
+    ) -> Result<(), Error> {
         // Each fragment size will be limited by max_frame_size config,
         // that had been given by the user,
         // or it will use the default max frame size which is 16 mb.
         if fragment_size > self.web_socket_config.max_frame_size.unwrap_or_default() {
-            return Err(Error::CustomFragmentSizeExceeded(fragment_size, self.web_socket_config.max_frame_size.unwrap_or_default()));
+            return Err(Error::CustomFragmentSizeExceeded(
+                fragment_size,
+                self.web_socket_config.max_frame_size.unwrap_or_default(),
+            ));
         }
 
         if data.len() > self.web_socket_config.max_message_size.unwrap_or_default() {
@@ -122,7 +132,10 @@ impl WSWriter {
             return Err(Error::MaxMessageSize);
         }
 
-        self.write_frames(message.to_frames(self.web_socket_config.max_frame_size.unwrap_or_default())).await
+        self.write_frames(
+            message.to_frames(self.web_socket_config.max_frame_size.unwrap_or_default()),
+        )
+        .await
     }
 
     pub(crate) async fn write_frames(&mut self, frames: Vec<Frame>) -> Result<(), Error> {

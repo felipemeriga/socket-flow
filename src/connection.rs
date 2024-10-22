@@ -28,14 +28,8 @@ impl Stream for WSConnection {
 }
 
 impl WSConnection {
-    pub fn new(
-        writer: WSWriter,
-        reader: WSReader,
-    ) -> Self {
-        Self {
-            writer,
-            reader,
-        }
+    pub fn new(writer: WSWriter, reader: WSReader) -> Self {
+        Self { writer, reader }
     }
 
     /// This function will split the connection into the `WSReader`, which is a stream of messages
@@ -69,7 +63,13 @@ impl WSConnection {
         self.writer.send_ping().await
     }
 
-    pub async fn send_large_data_fragmented(&mut self, data: Vec<u8>, fragment_size: usize) -> Result<(), Error> {
-        self.writer.send_large_data_fragmented(data, fragment_size).await
+    pub async fn send_large_data_fragmented(
+        &mut self,
+        data: Vec<u8>,
+        fragment_size: usize,
+    ) -> Result<(), Error> {
+        self.writer
+            .send_large_data_fragmented(data, fragment_size)
+            .await
     }
 }
