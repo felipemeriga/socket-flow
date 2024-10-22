@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
 pub struct ServerConfig {
-    pub web_socket_config: WebSocketConfig,
+    pub web_socket_config: Option<WebSocketConfig>,
     pub tls_config: Option<Arc<RustlsConfig>>,
 }
 

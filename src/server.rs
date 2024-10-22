@@ -1,13 +1,12 @@
 use crate::event::{generate_new_uuid, Event, EventStream};
-use crate::handshake::accept_async;
+use crate::handshake::{accept_async_with_config};
 use crate::stream::SocketFlowStream;
 use futures::StreamExt;
-use rustls::ServerConfig;
 use std::io::Error;
-use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio_rustls::{TlsAcceptor, TlsStream};
+use crate::config::ServerConfig;
 
 /// A ready to use websockets server
 ///
@@ -15,12 +14,14 @@ use tokio_rustls::{TlsAcceptor, TlsStream};
 /// Accepts as argument that port, where the server will be running, and returns an `EventStream`.
 /// Which implements Stream trait, being capable of processing a stream of events sequentially
 /// notifying the end-user, about new client connections, disconnections, messages and errors.
-pub async fn start_server(
+pub async fn start_server_with_config(
     port: u16,
-    tls_config: Option<Arc<ServerConfig>>,
+    config: Option<ServerConfig>,
 ) -> Result<EventStream, Error> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     let (tx, rx) = mpsc::channel(1000);
+    let web_socket_config = config.clone().unwrap_or_default().web_socket_config;
+    let tls_config = config.unwrap_or_default().tls_config;
     // This method will return an EventStream, which holds a Receiver channel. Therefore, this
     // spawned task will be used for processing new connections,
     // messages, disconnections and errors, concurrently.
@@ -43,7 +44,7 @@ pub async fn start_server(
                         SocketFlowStream::Plain(stream)
                     };
 
-                    let ws_connection = match accept_async(socket_stream).await {
+                    let ws_connection = match accept_async_with_config(socket_stream, web_socket_config.clone()).await {
                         Ok(conn) => conn,
                         Err(err) => {
                             tx.send(Event::Error(uuid, err)).await.unwrap();
@@ -91,4 +92,8 @@ pub async fn start_server(
     // by the spawned task.
     // Thus, processing and sending new events concurrently
     Ok(EventStream::new(rx))
+}
+
+pub async fn start_server(port: u16) -> Result<EventStream, Error> {
+    start_server_with_config(port, None).await
 }

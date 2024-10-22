@@ -1,10 +1,10 @@
 use futures::StreamExt;
 use log::{error, info};
 use pki_types::{CertificateDer, PrivateKeyDer};
-use rustls::ServerConfig;
+use rustls::ServerConfig as RustlsConfig;
 use rustls_pemfile::{certs, private_key};
 use socket_flow::event::{Event, ID};
-use socket_flow::server::start_server;
+use socket_flow::server::{start_server_with_config};
 use socket_flow::split::WSWriter;
 use std::collections::HashMap;
 use std::fs::File;
@@ -12,6 +12,7 @@ use std::io;
 use std::io::{BufReader, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
+use socket_flow::config::{ServerConfig};
 
 fn load_certs(path: &Path) -> io::Result<Vec<CertificateDer<'static>>> {
     certs(&mut BufReader::new(File::open(path)?)).collect()
@@ -26,8 +27,11 @@ fn load_key(path: &Path) -> io::Result<PrivateKeyDer<'static>> {
         ))?)
 }
 
-async fn run_server(port: u16, config: Arc<ServerConfig>) {
-    match start_server(8080, Some(config)).await {
+async fn run_server(port: u16, tls_config: Arc<RustlsConfig>) {
+    let mut server_config = ServerConfig::default();
+    server_config.tls_config = Option::from(tls_config);
+
+    match start_server_with_config(8080, Some(server_config)).await {
         Ok(mut event_receiver) => {
             let mut clients: HashMap<ID, WSWriter> = HashMap::new();
             info!("Server started on address 127.0.0.1:{}", port);
