@@ -22,6 +22,7 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use tokio_rustls::{TlsConnector, TlsStream};
 use tokio_stream::wrappers::ReceiverStream;
+use crate::split::{WSReader, WSWriter};
 
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
@@ -91,7 +92,7 @@ async fn second_stage_handshake(
     // The WSConnection is the structure that will be delivered to the end-user, which contains
     // a stream of frames, for consuming the incoming frames, and methods for writing frames into
     // the socket
-    let ws_connection = WSConnection::new(connection_writer, receiver_stream, config);
+    let ws_connection = WSConnection::new(WSWriter::new(connection_writer, config), WSReader::new(receiver_stream));
 
     // Spawning poll_messages which is the method for reading the frames from the socket concurrently,
     // because we need this method running, while the end-user can have
