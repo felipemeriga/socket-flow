@@ -141,14 +141,10 @@ here is an example of code, where we are going to collect info about real-time c
 ```rust
 use futures::StreamExt;
 use log::*;
-use rand::distr::Alphanumeric;
-use rand::{thread_rng, Rng};
 use socket_flow::handshake::connect_async;
-use tokio::select;
-use tokio::time::{interval, Duration};
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr, None).await {
+    match connect_async(addr).await {
         Ok(mut ws_connection) => {
             while let Some(result) = ws_connection.next().await {
                 match result {
@@ -170,14 +166,6 @@ async fn handle_connection(addr: &str) {
 async fn main() {
     env_logger::init();
     handle_connection("wss://api.gemini.com/v1/marketdata/BTCUSD").await;
-}
-
-fn generate_random_string() -> String {
-    thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(30)
-        .map(char::from)
-        .collect()
 }
 ```
 
@@ -288,7 +276,7 @@ async fn main() -> io::Result<()> {
     let addr = String::from("127.0.0.1:9002")
         .to_socket_addrs()?
         .next()
-        .ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
+        .ok_or_else(|| io::Error::from(ErrorKind::AddrNotAvailable))?;
 
     let certs = load_certs(Path::new("server.crt"))?;
     let key = load_key(Path::new("server.key"))?;
@@ -296,7 +284,7 @@ async fn main() -> io::Result<()> {
     let config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)
-        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+        .map_err(|err| io::Error::new(ErrorKind::InvalidInput, err))?;
 
     let acceptor = TlsAcceptor::from(Arc::new(config));
 
@@ -324,12 +312,16 @@ use futures::StreamExt;
 use log::*;
 use rand::distr::Alphanumeric;
 use rand::{thread_rng, Rng};
-use socket_flow::handshake::connect_async;
+use socket_flow::config::ClientConfig;
+use socket_flow::handshake::connect_async_with_config;
 use tokio::select;
 use tokio::time::{interval, Duration};
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr, Some("ca.crt")).await {
+    let mut client_config = ClientConfig::default();
+    client_config.ca_file = Some(String::from("ca.crt"));
+
+    match connect_async_with_config(addr, Some(client_config)).await {
         Ok(mut ws_connection) => {
             let mut ticker = interval(Duration::from_secs(5));
             // it will be used for closing the connection

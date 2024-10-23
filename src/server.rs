@@ -11,9 +11,12 @@ use tokio_rustls::{TlsAcceptor, TlsStream};
 /// A ready to use websockets server
 ///
 /// This method is used to spawn a websockets server with just several lines of code.
-/// Accepts as argument that port, where the server will be running, and returns an `EventStream`.
-/// Which implements Stream trait, being capable of processing a stream of events sequentially
-/// notifying the end-user, about new client connections, disconnections, messages and errors.
+/// It accepts a port where the server will run, and the ServerConfig, which contains custom
+/// websockets configurations, and a TLS config option; in case the end-user wants to enable
+/// TLS on this server.
+/// It returns an EventStream, which is a stream
+/// that notifies all the relevant events of the websockets server, like new connected clients
+/// messages from a single client, disconnections and errors.
 pub async fn start_server_with_config(
     port: u16,
     config: Option<ServerConfig>,
@@ -97,6 +100,12 @@ pub async fn start_server_with_config(
     Ok(EventStream::new(rx))
 }
 
+/// A ready to use websockets server
+///
+/// This method is used to spawn a websockets server with just several lines of code.
+/// It accepts a port where the server will run, and returns an EventStream, which is a stream
+/// that notifies all the relevant events of the websockets server, like new connected clients
+/// messages from a single client, disconnections and errors.
 pub async fn start_server(port: u16) -> Result<EventStream, Error> {
     start_server_with_config(port, None).await
 }
