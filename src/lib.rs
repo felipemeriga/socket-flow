@@ -1,4 +1,4 @@
-//! Simple async WebSockets implementation for Tokio stack.
+//! Straightforward async Websockets library for Rust!
 //!
 //! This library is supposed to offer a simple implementation for websockets, so end-user could use this to wrap a
 //! websockets server/client into their application, offering a smooth way of setting it up into his code.
@@ -10,7 +10,8 @@
 //!
 
 mod compress;
-mod connection;
+pub mod config;
+pub mod connection;
 pub mod error;
 pub mod event;
 mod frame;

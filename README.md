@@ -75,7 +75,7 @@ async fn main() {
     env_logger::init();
 
     let port: u16 = 8080;
-    match start_server(port, None).await {
+    match start_server(port).await {
         Ok(mut event_receiver) => {
             let mut clients: HashMap<ID, WSWriter> = HashMap::new();
             info!("Server started on address 127.0.0.1:{}", port);
@@ -185,7 +185,7 @@ use tokio::select;
 use tokio::time::{interval, Duration};
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr, None).await {
+    match connect_async(addr).await {
         Ok(mut ws_connection) => {
             let mut ticker = interval(Duration::from_secs(5));
             // it will be used for closing the connection

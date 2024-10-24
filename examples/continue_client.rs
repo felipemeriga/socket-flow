@@ -4,12 +4,12 @@ use rand::{thread_rng, Rng};
 use socket_flow::handshake::connect_async;
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr, None).await {
+    match connect_async(addr).await {
         Ok(mut ws_connection) => {
             let my_random_string = generate_random_string();
             info!("Sending random string: {}", my_random_string);
             if ws_connection
-                .send_large_data_fragmented(Vec::from(my_random_string))
+                .send_large_data_fragmented(Vec::from(my_random_string), 1)
                 .await
                 .is_err()
             {
