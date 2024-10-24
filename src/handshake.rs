@@ -23,6 +23,7 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use tokio_rustls::{TlsConnector, TlsStream};
 use tokio_stream::wrappers::ReceiverStream;
+use crate::compression::parse_extensions;
 
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
@@ -35,6 +36,7 @@ pub(crate) const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\
 
 const HTTP_METHOD: &str = "GET";
 pub(crate) const SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";
+pub(crate) const SEC_WEBSOCKET_EXTENSIONS: &str = "Sec-WebSocket-Extensions";
 const HOST: &str = "Host";
 
 pub type Result = std::result::Result<WSConnection, Error>;
@@ -257,6 +259,8 @@ async fn parse_handshake(
         Some(key) => key.to_string(),
         None => Err(Error::NoSecWebsocketKey)?,
     };
+
+    let _ = parse_extensions(req.get_header_value(SEC_WEBSOCKET_EXTENSIONS).unwrap_or_default());
 
     let accept_key = generate_websocket_accept_value(sec_websocket_key);
 
