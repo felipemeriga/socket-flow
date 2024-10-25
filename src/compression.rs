@@ -46,3 +46,21 @@ pub fn parse_extensions(extensions_header_value: String) -> Option<Extensions> {
 
     Some(extensions)
 }
+
+pub fn add_extension_headers(request: &mut String, extensions: Option<Extensions>) {
+    match extensions {
+        None => {
+            request.push_str("\r\n");
+        }
+        Some(extensions) => {
+            if extensions.permessage_deflate {
+                request.push_str(&format!("Sec-WebSocket-Extensions: {}", PERMESSAGE_DEFLATE));
+                if let Some(true) = extensions.client_no_context_takeover { request.push_str(&format!("; {}", CLIENT_NO_CONTEXT_TAKEOVER)) }
+                if let Some(true) = extensions.server_no_context_takeover { request.push_str(&format!("; {}", SERVER_NO_CONTEXT_TAKEOVER)) }
+                if let Some(bits) = extensions.client_max_window_bits { request.push_str(&format!("; {}={}", CLIENT_MAX_WINDOW_BITS, bits)) }
+                if let Some(bits) = extensions.server_max_window_bits { request.push_str(&format!("; {}={}", SERVER_MAX_WINDOW_BITS, bits)) }
+            }
+            request.push_str("\r\n\r\n");
+        }
+    }
+}

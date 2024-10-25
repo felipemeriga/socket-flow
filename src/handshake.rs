@@ -23,7 +23,7 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use tokio_rustls::{TlsConnector, TlsStream};
 use tokio_stream::wrappers::ReceiverStream;
-use crate::compression::parse_extensions;
+use crate::compression::{add_extension_headers, parse_extensions};
 
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
@@ -32,7 +32,7 @@ pub(crate) const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\
         Connection: Upgrade\r\n\
         Upgrade: websocket\r\n\
         Sec-WebSocket-Accept: {}\r\n\
-        \r\n";
+        ";
 
 const HTTP_METHOD: &str = "GET";
 pub(crate) const SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";
@@ -260,11 +260,13 @@ async fn parse_handshake(
         None => Err(Error::NoSecWebsocketKey)?,
     };
 
-    let _ = parse_extensions(req.get_header_value(SEC_WEBSOCKET_EXTENSIONS).unwrap_or_default());
+    let extensions = parse_extensions(req.get_header_value(SEC_WEBSOCKET_EXTENSIONS).unwrap_or_default());
 
     let accept_key = generate_websocket_accept_value(sec_websocket_key);
 
-    let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
+    let mut response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
+    add_extension_headers(&mut response, extensions);
+
     write_half
         .write_all(response.as_bytes())
         .await
