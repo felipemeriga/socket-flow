@@ -8,8 +8,6 @@
 //! to implement the standards of [WebSocket Protocol RFC](https://datatracker.ietf.org/doc/html/rfc6455),
 //! performing handshakes, reading frames, parsing masks, handling opcodes and internal payload.
 //!
-
-mod compress;
 pub mod config;
 pub mod connection;
 pub mod error;

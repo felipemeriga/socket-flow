@@ -23,7 +23,7 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use tokio_rustls::{TlsConnector, TlsStream};
 use tokio_stream::wrappers::ReceiverStream;
-use crate::compression::{add_extension_headers, parse_extensions};
+use crate::compression::{add_extension_headers, Decoder, Extensions, parse_extensions};
 
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
@@ -58,16 +58,20 @@ pub async fn accept_async_with_config(
     let (reader, mut write_half) = split(stream);
     let mut buf_reader = BufReader::new(reader);
 
-    parse_handshake(&mut buf_reader, &mut write_half).await?;
+    let mut config = config.unwrap_or_default();
+    let parsed_extensions = parse_handshake(&mut buf_reader, &mut write_half).await?;
+    config.extensions = parsed_extensions.clone();
+
+    let decoder = Decoder::new(parsed_extensions.unwrap_or_default().server_max_window_bits);
 
     // Identify permessage-deflate for enabling compression
     second_stage_handshake(
         buf_reader,
         write_half,
         WriterKind::Server,
-        config.unwrap_or_default(),
-    )
-    .await
+        config,
+        decoder,
+    ).await
 }
 
 async fn second_stage_handshake(
@@ -75,6 +79,7 @@ async fn second_stage_handshake(
     write_half: WriteHalf<SocketFlowStream>,
     kind: WriterKind,
     config: WebSocketConfig,
+    decoder: Decoder,
 ) -> Result {
     // This writer instance would be used for writing frames into the socket.
     // Since it's going to be used by two different instances, we need to wrap it through an Arc
@@ -85,7 +90,7 @@ async fn second_stage_handshake(
     // ReadStream will be running on a separate task, capturing all the incoming frames from the connection, and broadcasting them through this
     // tokio mpsc channel. Therefore, it can be consumed by the end-user of this library
     let (read_tx, read_rx) = channel::<std::result::Result<Message, Error>>(20);
-    let mut read_stream = ReadStream::new(buf_reader, read_tx, stream_writer, config.clone());
+    let mut read_stream = ReadStream::new(buf_reader, read_tx, stream_writer, config.clone(), decoder);
 
     let connection_writer = writer.clone();
     // Transforming the receiver of the channel into a Stream, so we could leverage using
@@ -204,8 +209,9 @@ pub async fn connect_async_with_config(addr: &str, client_config: Option<ClientC
         write_half,
         WriterKind::Client,
         client_config.unwrap_or_default().web_socket_config,
+        Decoder::new(None)
     )
-    .await
+        .await
 }
 
 pub(crate) fn generate_websocket_accept_value(key: String) -> String {
@@ -223,7 +229,7 @@ fn generate_websocket_key() -> String {
 async fn parse_handshake(
     buf_reader: &mut BufReader<ReadHalf<SocketFlowStream>>,
     write_half: &mut WriteHalf<SocketFlowStream>,
-) -> std::result::Result<(), Error> {
+) -> std::result::Result<Option<Extensions>, Error> {
     // Using a 1024 sized buffer, because since this is an opening handshake request,
     // there won't be any cases where we have big requests, which also prevents malicious
     // connections that sends a lot of data
@@ -265,7 +271,7 @@ async fn parse_handshake(
     let accept_key = generate_websocket_accept_value(sec_websocket_key);
 
     let mut response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
-    add_extension_headers(&mut response, extensions);
+    add_extension_headers(&mut response, extensions.clone());
 
     write_half
         .write_all(response.as_bytes())
@@ -273,5 +279,5 @@ async fn parse_handshake(
         .map_err(|source| Error::IOError { source })?;
     write_half.flush().await?;
 
-    Ok(())
+    Ok(extensions)
 }

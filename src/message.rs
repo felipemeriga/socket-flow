@@ -45,16 +45,19 @@ impl Message {
             Message::Binary(data) => data,
         };
 
+        // TODO - Compression ?
         if payload.is_empty() {
             return vec![Frame {
                 final_fragment: true,
                 opcode,
                 payload,
+                compressed: false
             }];
         }
 
         let mut frames = Vec::new();
         for chunk in payload.chunks(max_frame_size) {
+            // TODO - Compression ?
             frames.push(Frame {
                 final_fragment: false,
                 opcode: if frames.is_empty() {
@@ -63,6 +66,7 @@ impl Message {
                     OpCode::Continue
                 },
                 payload: chunk.to_vec(),
+                compressed: false
             });
         }
 

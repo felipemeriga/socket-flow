@@ -50,7 +50,7 @@ impl WSWriter {
     /// through the socket, and waits until it receives the confirmation in a channel
     /// executing it inside a timeout, to avoid a long waiting time
     pub async fn close_connection(&mut self) -> Result<(), Error> {
-        self.write_frames(vec![Frame::new(true, OpCode::Close, Vec::new())])
+        self.write_frames(vec![Frame::new(true, OpCode::Close, Vec::new(), false)])
             .await?;
 
         sleep(Duration::from_millis(500)).await;
@@ -84,7 +84,7 @@ impl WSWriter {
 
     // It will send a ping frame through the socket
     pub async fn send_ping(&mut self) -> Result<(), Error> {
-        self.write_frames(vec![Frame::new(true, OpCode::Ping, Vec::new())])
+        self.write_frames(vec![Frame::new(true, OpCode::Ping, Vec::new(), false)])
             .await
     }
 
@@ -120,7 +120,8 @@ impl WSWriter {
                 OpCode::Continue
             };
 
-            self.write_frames(vec![Frame::new(is_final, opcode, Vec::from(chunk))])
+            // TODO - add compression
+            self.write_frames(vec![Frame::new(is_final, opcode, Vec::from(chunk), false)])
                 .await?
         }
 
