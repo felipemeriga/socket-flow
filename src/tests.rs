@@ -33,7 +33,7 @@ mod tests {
         let final_fragment = false;
         let opcode = OpCode::Text;
         let payload: Vec<u8> = Vec::new();
-        let frame = Frame::new(final_fragment, opcode.clone(), payload.clone());
+        let frame = Frame::new(final_fragment, opcode.clone(), payload.clone(), false);
 
         assert_eq!(frame.final_fragment, final_fragment);
         assert_eq!(frame.opcode, opcode);

@@ -95,7 +95,7 @@ impl ReadStream {
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
                                     if fragmented_message_clone.compressed {
-                                        fragmented_message_clone.fragments = self.decoder.decompress(&mut fragmented_message_clone.fragments)?;
+                                        fragmented_message_clone.fragments = self.decoder.decompress(&fragmented_message_clone.fragments)?;
                                     }
 
                                     // TODO - Decompression if compression is enabled

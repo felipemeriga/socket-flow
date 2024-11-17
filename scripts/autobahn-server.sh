@@ -26,7 +26,7 @@ function test_diff() {
     fi
 }
 
-cargo run --release --example echo_server & WSSERVER_PID=$!
+RUST_LOG=debug cargo run --release --example echo_server & WSSERVER_PID=$!
 sleep 20
 
 docker run --rm \

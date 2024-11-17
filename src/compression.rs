@@ -1,6 +1,4 @@
 use flate2::{Decompress, FlushDecompress, Status};
-use crate::compression::MaxWindowBits::{Eight, Eleven, Fifteen, Fourteen, Nine, Ten, Thirteen, Twelve};
-use crate::error::Error;
 
 const PERMESSAGE_DEFLATE: &str = "permessage-deflate";
 const CLIENT_NO_CONTEXT_TAKEOVER: &str = "client_no_context_takeover";
@@ -8,37 +6,37 @@ const SERVER_NO_CONTEXT_TAKEOVER: &str = "server_no_context_takeover";
 const CLIENT_MAX_WINDOW_BITS: &str = "client_max_window_bits";
 const SERVER_MAX_WINDOW_BITS: &str = "server_max_window_bits";
 
-#[derive(Clone)]
-pub enum MaxWindowBits {
-    Eight = 8,
-    Nine = 9,
-    Ten = 10,
-    Eleven = 11,
-    Twelve = 12,
-    Thirteen = 13,
-    Fourteen = 14,
-    Fifteen = 15,
-}
-
-impl MaxWindowBits {
-    fn from_u8(value: u8) -> Result<Self, Error> {
-        match value {
-            8 => Ok(Eight),
-            9 => Ok(Nine),
-            10 => Ok(Ten),
-            11 => Ok(Eleven),
-            12 => Ok(Twelve),
-            13 => Ok(Thirteen),
-            14 => Ok(Fourteen),
-            15 => Ok(Fifteen),
-            _ => Err(Error::InvalidMaxWindowBits)
-        }
-    }
-
-    fn to_u8(&self) -> u8 {
-       self.to_u8()
-    }
-}
+// #[derive(Copy, Clone)]
+// pub enum MaxWindowBits {
+//     Eight = 8,
+//     Nine = 9,
+//     Ten = 10,
+//     Eleven = 11,
+//     Twelve = 12,
+//     Thirteen = 13,
+//     Fourteen = 14,
+//     Fifteen = 15,
+// }
+//
+// impl MaxWindowBits {
+//     fn from_u8(value: u8) -> Result<Self, Error> {
+//         match value {
+//             8 => Ok(Eight),
+//             9 => Ok(Nine),
+//             10 => Ok(Ten),
+//             11 => Ok(Eleven),
+//             12 => Ok(Twelve),
+//             13 => Ok(Thirteen),
+//             14 => Ok(Fourteen),
+//             15 => Ok(Fifteen),
+//             _ => Err(Error::InvalidMaxWindowBits)
+//         }
+//     }
+//
+//     fn to_u8(&self) -> u8 {
+//        *self as u8
+//     }
+// }
 
 
 /// It's important to enhance that some compression extensions,
@@ -123,23 +121,22 @@ pub fn merge_extensions(server_extensions: Option<Extensions>, client_extensions
         Some(ext) => ext,
         None => return None,
     };
-    let mut merged_extensions =  Extensions::default();
-    merged_extensions.permessage_deflate =  client_ext.permessage_deflate && server_ext.permessage_deflate;
-    merged_extensions.client_no_context_takeover = server_ext.client_no_context_takeover.and(client_ext.client_no_context_takeover);
-    merged_extensions.server_no_context_takeover = server_ext.server_no_context_takeover.and(client_ext.server_no_context_takeover);
-
-    merged_extensions.client_max_window_bits = match (server_ext.client_max_window_bits, client_ext.client_max_window_bits) {
-        (Some(server_bits), Some(client_bits)) => Some(std::cmp::min(server_bits, client_bits)),
-        (Some(server_bits), None) => Some(server_bits),
-        (None, Some(client_bits)) => Some(client_bits),
-        (None, None) => Some(8),
-    };
-
-    merged_extensions.server_max_window_bits = match (server_ext.server_max_window_bits, client_ext.server_max_window_bits) {
-        (Some(server_bits), Some(client_bits)) => Some(std::cmp::min(server_bits, client_bits)),
-        (Some(server_bits), None) => Some(server_bits),
-        (None, Some(client_bits)) => Some(client_bits),
-        (None, None) => Some(8),
+    let merged_extensions = Extensions {
+        permessage_deflate: client_ext.permessage_deflate && server_ext.permessage_deflate,
+        client_no_context_takeover: server_ext.client_no_context_takeover.and(client_ext.client_no_context_takeover),
+        server_no_context_takeover: server_ext.server_no_context_takeover.and(client_ext.server_no_context_takeover),
+        client_max_window_bits: match (server_ext.client_max_window_bits, client_ext.client_max_window_bits) {
+            (Some(server_bits), Some(client_bits)) => Some(std::cmp::min(server_bits, client_bits)),
+            (Some(server_bits), None) => Some(server_bits),
+            (None, Some(client_bits)) => Some(client_bits),
+            (None, None) => Some(8),
+        },
+        server_max_window_bits: match (server_ext.server_max_window_bits, client_ext.server_max_window_bits) {
+            (Some(server_bits), Some(client_bits)) => Some(std::cmp::min(server_bits, client_bits)),
+            (Some(server_bits), None) => Some(server_bits),
+            (None, Some(client_bits)) => Some(client_bits),
+            (None, None) => Some(8),
+        },
     };
     Some(merged_extensions)
 }
