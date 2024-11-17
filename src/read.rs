@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, BufReader, ReadHalf};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
-use crate::compression::Decoder;
+use crate::decoder::Decoder;
 
 #[derive(Clone)]
 pub(crate) struct FragmentedMessage {

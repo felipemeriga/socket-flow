@@ -23,3 +23,4 @@ pub mod stream;
 mod tests;
 mod write;
 mod compression;
+mod decoder;

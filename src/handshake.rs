@@ -23,7 +23,8 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use tokio_rustls::{TlsConnector, TlsStream};
 use tokio_stream::wrappers::ReceiverStream;
-use crate::compression::{add_extension_headers, Decoder, Extensions, merge_extensions, parse_extensions};
+use crate::compression::{add_extension_headers, Extensions, merge_extensions, parse_extensions};
+use crate::decoder::Decoder;
 
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
