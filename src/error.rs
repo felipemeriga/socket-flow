@@ -127,4 +127,9 @@ pub enum Error {
 
     #[error("use_tls = `{0}` argument does not match the passed URL scheme: `{1}`")]
     SchemeAgainstTlsConfig(bool, String),
+
+
+    // Compression / Decompression Errors
+    #[error("max_window_bits should be a value between 8 and 15")]
+    InvalidMaxWindowBits
 }

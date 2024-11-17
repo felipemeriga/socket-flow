@@ -23,7 +23,7 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use tokio_rustls::{TlsConnector, TlsStream};
 use tokio_stream::wrappers::ReceiverStream;
-use crate::compression::{add_extension_headers, Decoder, Extensions, parse_extensions};
+use crate::compression::{add_extension_headers, Decoder, Extensions, merge_extensions, parse_extensions};
 
 const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
@@ -59,10 +59,16 @@ pub async fn accept_async_with_config(
     let mut buf_reader = BufReader::new(reader);
 
     let mut config = config.unwrap_or_default();
-    let parsed_extensions = parse_handshake(&mut buf_reader, &mut write_half).await?;
+    let parsed_extensions = parse_handshake(&mut buf_reader, &mut write_half, Some(Extensions{
+        permessage_deflate: true,
+        client_no_context_takeover: Some(true),
+        server_no_context_takeover: Some(true),
+        client_max_window_bits: None,
+        server_max_window_bits: None,
+    })).await?;
     config.extensions = parsed_extensions.clone();
 
-    let decoder = Decoder::new(parsed_extensions.unwrap_or_default().server_max_window_bits);
+    let decoder = Decoder::new();
 
     // Identify permessage-deflate for enabling compression
     second_stage_handshake(
@@ -209,7 +215,7 @@ pub async fn connect_async_with_config(addr: &str, client_config: Option<ClientC
         write_half,
         WriterKind::Client,
         client_config.unwrap_or_default().web_socket_config,
-        Decoder::new(None)
+        Decoder::new()
     )
         .await
 }
@@ -229,6 +235,7 @@ fn generate_websocket_key() -> String {
 async fn parse_handshake(
     buf_reader: &mut BufReader<ReadHalf<SocketFlowStream>>,
     write_half: &mut WriteHalf<SocketFlowStream>,
+    server_extensions: Option<Extensions>
 ) -> std::result::Result<Option<Extensions>, Error> {
     // Using a 1024 sized buffer, because since this is an opening handshake request,
     // there won't be any cases where we have big requests, which also prevents malicious
@@ -266,12 +273,13 @@ async fn parse_handshake(
         None => Err(Error::NoSecWebsocketKey)?,
     };
 
-    let extensions = parse_extensions(req.get_header_value(SEC_WEBSOCKET_EXTENSIONS).unwrap_or_default());
-
+    let client_extensions = parse_extensions(req.get_header_value(SEC_WEBSOCKET_EXTENSIONS).unwrap_or_default());
+    let agreed_extensions = merge_extensions(server_extensions, client_extensions);
+    
     let accept_key = generate_websocket_accept_value(sec_websocket_key);
 
     let mut response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
-    add_extension_headers(&mut response, extensions.clone());
+    add_extension_headers(&mut response, agreed_extensions.clone());
 
     write_half
         .write_all(response.as_bytes())
@@ -279,5 +287,5 @@ async fn parse_handshake(
         .map_err(|source| Error::IOError { source })?;
     write_half.flush().await?;
 
-    Ok(extensions)
+    Ok(agreed_extensions)
 }

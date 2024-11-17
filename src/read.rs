@@ -5,8 +5,6 @@ use crate::message::Message;
 use crate::stream::SocketFlowStream;
 use crate::write::Writer;
 use std::sync::Arc;
-use bytes::BytesMut;
-use sha1::digest::typenum::op;
 use tokio::io::{AsyncReadExt, BufReader, ReadHalf};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;

@@ -3,10 +3,10 @@
   "servers": [
     {
       "agent": "socket-flow",
-      "url": "ws://host.docker.internal:9002"
+      "url": "ws://127.0.0.1:9002"
     }
   ],
   "cases": ["*"],
-  "exclude-cases": ["12.3.*", "13.2.*", "13.3.*","13.4.*", "13.5.*", "13.6.*", "13.7.*"],
+  "exclude-cases": [],
   "exclude-agent-cases": {}
 }

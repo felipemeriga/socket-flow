@@ -1,19 +1,78 @@
 use flate2::{Decompress, FlushDecompress, Status};
+use crate::compression::MaxWindowBits::{Eight, Eleven, Fifteen, Fourteen, Nine, Ten, Thirteen, Twelve};
+use crate::error::Error;
 
 const PERMESSAGE_DEFLATE: &str = "permessage-deflate";
 const CLIENT_NO_CONTEXT_TAKEOVER: &str = "client_no_context_takeover";
 const SERVER_NO_CONTEXT_TAKEOVER: &str = "server_no_context_takeover";
 const CLIENT_MAX_WINDOW_BITS: &str = "client_max_window_bits";
 const SERVER_MAX_WINDOW_BITS: &str = "server_max_window_bits";
-const MAX_WINDOW_BITS_DEFAULT: u8 = 15;
+
+#[derive(Clone)]
+pub enum MaxWindowBits {
+    Eight = 8,
+    Nine = 9,
+    Ten = 10,
+    Eleven = 11,
+    Twelve = 12,
+    Thirteen = 13,
+    Fourteen = 14,
+    Fifteen = 15,
+}
+
+impl MaxWindowBits {
+    fn from_u8(value: u8) -> Result<Self, Error> {
+        match value {
+            8 => Ok(Eight),
+            9 => Ok(Nine),
+            10 => Ok(Ten),
+            11 => Ok(Eleven),
+            12 => Ok(Twelve),
+            13 => Ok(Thirteen),
+            14 => Ok(Fourteen),
+            15 => Ok(Fifteen),
+            _ => Err(Error::InvalidMaxWindowBits)
+        }
+    }
+
+    fn to_u8(&self) -> u8 {
+       self.to_u8()
+    }
+}
 
 
+/// It's important to enhance that some compression extensions,
+/// in some cases affects compression and
+/// decompression(client_no_context_takeover, server_no_context_takeover),
+/// while another one affects only compression(client_max_window_bits, server_max_window_bits).
+/// Keeping the context between compression and decompression,
+/// improves performance but adds more overhead, consuming more memory.
+/// Larger window sizes (closer to 15)
+/// result in better compression ratios but are slower and use more memory.
+/// Smaller window sizes (closer to 8) offer faster performance but with worse compression.
 #[derive(Debug, Clone, Default)]
 pub struct Extensions {
+    /// Dictates if compression is enabled
     pub permessage_deflate: bool,
+    /// Asks that the client should reset its compression context after compressing a message,
+    /// if accepted by the server,
+    /// the server must reset the compression context when decompressing each message.
+    /// Bear in mind
+    /// that this option is related to resetting the context when the client compresses,
+    /// and when the server decompresses.
+    /// The opposite is not valid.
     pub client_no_context_takeover: Option<bool>,
+    /// Asks that the server should reset its compression context after compressing a message,
+    /// if a client asks this, and the server accepts,
+    /// the client must reset the compression context when decompressing each message.
+    /// Bear in mind
+    /// that this option is related to resetting the context when the server compresses,
+    /// and when the client decompresses.
+    /// The opposite is not valid.
     pub server_no_context_takeover: Option<bool>,
+    /// Asks that the client sets its compression window to a specific number.
     pub client_max_window_bits: Option<u8>,
+    /// Asks that the server sets its compression window to a specific number.
     pub server_max_window_bits: Option<u8>,
 }
 
@@ -55,6 +114,36 @@ pub fn parse_extensions(extensions_header_value: String) -> Option<Extensions> {
     Some(extensions)
 }
 
+pub fn merge_extensions(server_extensions: Option<Extensions>, client_extensions: Option<Extensions>) -> Option<Extensions> {
+    let server_ext = match server_extensions {
+        Some(ext) => ext,
+        None => return None,
+    };
+    let client_ext = match client_extensions {
+        Some(ext) => ext,
+        None => return None,
+    };
+    let mut merged_extensions =  Extensions::default();
+    merged_extensions.permessage_deflate =  client_ext.permessage_deflate && server_ext.permessage_deflate;
+    merged_extensions.client_no_context_takeover = server_ext.client_no_context_takeover.and(client_ext.client_no_context_takeover);
+    merged_extensions.server_no_context_takeover = server_ext.server_no_context_takeover.and(client_ext.server_no_context_takeover);
+
+    merged_extensions.client_max_window_bits = match (server_ext.client_max_window_bits, client_ext.client_max_window_bits) {
+        (Some(server_bits), Some(client_bits)) => Some(std::cmp::min(server_bits, client_bits)),
+        (Some(server_bits), None) => Some(server_bits),
+        (None, Some(client_bits)) => Some(client_bits),
+        (None, None) => Some(8),
+    };
+
+    merged_extensions.server_max_window_bits = match (server_ext.server_max_window_bits, client_ext.server_max_window_bits) {
+        (Some(server_bits), Some(client_bits)) => Some(std::cmp::min(server_bits, client_bits)),
+        (Some(server_bits), None) => Some(server_bits),
+        (None, Some(client_bits)) => Some(client_bits),
+        (None, None) => Some(8),
+    };
+    Some(merged_extensions)
+}
+
 pub fn add_extension_headers(request: &mut String, extensions: Option<Extensions>) {
     match extensions {
         None => {
@@ -81,9 +170,8 @@ pub struct Decoder {
 impl Decoder {
     // By default, a decompression process only considers the max_window_bits
     // retaining the same context for all the messages
-    pub fn new(mut max_window_bits: Option<u8>) -> Self {
-        let m_window_bits = max_window_bits.unwrap_or(MAX_WINDOW_BITS_DEFAULT);
-        let decompressor = Decompress::new_with_window_bits(false, m_window_bits);
+    pub fn new() -> Self {
+        let decompressor = Decompress::new(false);
 
         Self { decompressor }
     }
