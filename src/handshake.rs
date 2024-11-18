@@ -60,14 +60,8 @@ pub async fn accept_async_with_config(
     let mut buf_reader = BufReader::new(reader);
 
     let mut config = config.unwrap_or_default();
-    let parsed_extensions = parse_handshake(&mut buf_reader, &mut write_half, Some(Extensions{
-        permessage_deflate: true,
-        client_no_context_takeover: Some(true),
-        server_no_context_takeover: Some(true),
-        client_max_window_bits: None,
-        server_max_window_bits: None,
-    })).await?;
-    config.extensions = parsed_extensions.clone();
+    let parsed_extensions = parse_handshake(&mut buf_reader, &mut write_half, config.extensions).await?;
+    config.extensions = parsed_extensions;
 
     let decoder = Decoder::new();
 

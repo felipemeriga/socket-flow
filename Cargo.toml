@@ -57,6 +57,9 @@ name = "continue_client"
 name = "autobahn_client"
 
 [[example]]
+name = "autobahn_server"
+
+[[example]]
 name = "simple_server"
 
 [[example]]

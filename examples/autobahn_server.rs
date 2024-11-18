@@ -1,6 +1,6 @@
 use futures::StreamExt;
 use log::*;
-use socket_flow::handshake::{accept_async};
+use socket_flow::handshake::{accept_async_with_config};
 use socket_flow::stream::SocketFlowStream;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
@@ -8,7 +8,16 @@ use socket_flow::compression::Extensions;
 use socket_flow::config::WebSocketConfig;
 
 async fn handle_connection(_: SocketAddr, stream: TcpStream) {
-    match accept_async(SocketFlowStream::Plain(stream)).await {
+    let mut config = WebSocketConfig::default();
+    config.extensions = Some(Extensions {
+        permessage_deflate: true,
+        client_no_context_takeover: Some(true),
+        server_no_context_takeover: Some(true),
+        client_max_window_bits: None,
+        server_max_window_bits: None,
+    });
+
+    match accept_async_with_config(SocketFlowStream::Plain(stream), Some(config)).await {
         Ok(mut ws_connection) => {
             while let Some(result) = ws_connection.next().await {
                 match result {

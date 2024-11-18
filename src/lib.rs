@@ -22,5 +22,5 @@ pub mod split;
 pub mod stream;
 mod tests;
 mod write;
-mod compression;
+pub mod compression;
 mod decoder;
