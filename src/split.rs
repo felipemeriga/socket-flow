@@ -8,9 +8,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use bytes::BytesMut;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
+use crate::encoder::Encoder;
 
 pub struct WSReader {
     read_rx: ReceiverStream<Result<Message, Error>>,
@@ -33,14 +35,16 @@ impl Stream for WSReader {
 pub struct WSWriter {
     writer: Arc<Mutex<Writer>>,
     web_socket_config: WebSocketConfig,
-    // pub(crate) encoder: Encoder
+    // TODO - Find a way to don't expose the decoder to the end-user
+    encoder: Encoder
 }
 
 impl WSWriter {
-    pub fn new(writer: Arc<Mutex<Writer>>, web_socket_config: WebSocketConfig) -> Self {
+    pub fn new(writer: Arc<Mutex<Writer>>, web_socket_config: WebSocketConfig, encoder: Encoder) -> Self {
         Self {
             writer,
             web_socket_config,
+            encoder
         }
     }
 
@@ -134,7 +138,7 @@ impl WSWriter {
             Message::Binary(_) => OpCode::Binary,
         };
 
-        let payload = match message {
+        let mut payload = match message {
             Message::Text(text) => text.into_bytes(),
             Message::Binary(data) => data,
         };
@@ -151,15 +155,14 @@ impl WSWriter {
 
         let max_frame_size = self.web_socket_config.max_frame_size.unwrap_or_default();
         let mut frames = Vec::new();
-        let compressed = false;
+        let mut compressed = false;
 
-        // println!("{}", payload.len());
         // If compression is enabled, and the payload is greater than 8KB, compress the payload
-        // TODO - Uncomment this part, when we finish testing all decompression features
-        // if self.web_socket_config.extensions.clone().unwrap_or_default().permessage_deflate && payload.len() > 1000024 {
-        //     payload = self.encoder.compress(&payload)?;
-        //     compressed = true;
-        // }
+        // TODO - Change to constant
+        if self.web_socket_config.extensions.clone().unwrap_or_default().permessage_deflate && payload.len() > 8192 {
+            payload = self.encoder.compress(&mut BytesMut::from(&payload[..]))?;
+            compressed = true;
+        }
 
         for chunk in payload.chunks(max_frame_size) {
             frames.push(Frame {
