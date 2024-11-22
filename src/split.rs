@@ -30,10 +30,10 @@ impl Stream for WSReader {
     }
 }
 
-#[derive(Clone)]
 pub struct WSWriter {
     writer: Arc<Mutex<Writer>>,
     web_socket_config: WebSocketConfig,
+    // pub(crate) encoder: Encoder
 }
 
 impl WSWriter {
@@ -128,20 +128,80 @@ impl WSWriter {
         Ok(())
     }
 
+    pub(crate) fn convert_to_frames(&mut self, message: Message) -> Result<Vec<Frame>, Error> {
+        let opcode = match message {
+            Message::Text(_) => OpCode::Text,
+            Message::Binary(_) => OpCode::Binary,
+        };
+
+        let payload = match message {
+            Message::Text(text) => text.into_bytes(),
+            Message::Binary(data) => data,
+        };
+
+        // Empty payloads aren't compressed
+        if payload.is_empty() {
+            return Ok(vec![Frame {
+                final_fragment: true,
+                opcode,
+                payload,
+                compressed: false
+            }]);
+        }
+
+        let max_frame_size = self.web_socket_config.max_frame_size.unwrap_or_default();
+        let mut frames = Vec::new();
+        let compressed = false;
+
+        // println!("{}", payload.len());
+        // If compression is enabled, and the payload is greater than 8KB, compress the payload
+        // TODO - Uncomment this part, when we finish testing all decompression features
+        // if self.web_socket_config.extensions.clone().unwrap_or_default().permessage_deflate && payload.len() > 1000024 {
+        //     payload = self.encoder.compress(&payload)?;
+        //     compressed = true;
+        // }
+
+        for chunk in payload.chunks(max_frame_size) {
+            frames.push(Frame {
+                final_fragment: false,
+                opcode: if frames.is_empty() {
+                    opcode.clone()
+                } else {
+                    OpCode::Continue
+                },
+                payload: chunk.to_vec(),
+                compressed
+            });
+        }
+
+        if let Some(last_frame) = frames.last_mut() {
+            last_frame.final_fragment = true;
+        }
+
+        Ok(frames)
+    }
+
     pub(crate) async fn write_message(&mut self, message: Message) -> Result<(), Error> {
         if message.as_binary().len() > self.web_socket_config.max_message_size.unwrap_or_default() {
             return Err(Error::MaxMessageSize);
         }
 
-        self.write_frames(
-            message.to_frames(self.web_socket_config.max_frame_size.unwrap_or_default()),
-        )
+        let frames = self.convert_to_frames(message)?;
+        self.write_frames(frames)
         .await
     }
 
     pub(crate) async fn write_frames(&mut self, frames: Vec<Frame>) -> Result<(), Error> {
+        // For compressed messages, regardless if it's fragmented or not, we always set the RSV1 bit
+        // for the first frame.
+        let mut set_rsv1_first_frame = !frames.is_empty() && frames[0].compressed;
+
         for frame in frames {
-            self.writer.lock().await.write_frame(frame).await?
+            self.writer.lock().await.write_frame(frame, set_rsv1_first_frame).await?;
+            // Setting it to false,
+            // since we only need
+            // to set RSV1 bit for the first frame if compression is enabled
+            set_rsv1_first_frame = false;
         }
         Ok(())
     }

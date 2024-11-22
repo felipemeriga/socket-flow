@@ -1,7 +1,5 @@
 use bytes::BytesMut;
 use flate2::{Decompress, FlushDecompress, Status};
-use std::cmp;
-
 fn calculate_buffer_size(payload_size: usize) -> usize {
     if payload_size <= 4096 {
         4096 // 4 KB for small payloads
@@ -14,59 +12,57 @@ fn calculate_buffer_size(payload_size: usize) -> usize {
 
 pub(crate) struct Decoder {
     pub decompressor: Decompress,
+    pub reset_context: bool,
 }
 
+const DEFLATE_TRAILER: [u8; 4] = [0, 0, 255, 255];
+
 impl Decoder {
-    pub fn new() -> Self {
-        let decompressor = Decompress::new(false);
-        Self { decompressor }
+    pub fn new(reset_context: bool, window_bits: Option<u8>) -> Self {
+        let decompressor = if let Some(window_bits) = window_bits {
+            Decompress::new_with_window_bits(false, window_bits)
+        } else {
+            Decompress::new(false)
+        };
+        Self { decompressor, reset_context }
     }
 
-    pub fn decompress(&mut self, payload: &[u8]) -> Result<Vec<u8>, std::io::Error> {
+    pub fn decompress(&mut self, payload: &mut BytesMut) -> Result<Vec<u8>, std::io::Error> {
+        payload.extend_from_slice(&DEFLATE_TRAILER);
         // adjust the buffer size, depending on the payload,
         // for balancing between CPU vs. Memory usage
         let buffer_size = calculate_buffer_size(payload.len());
         // Create an output buffer with a reasonable initial capacity
-        let mut decompressed_data = BytesMut::with_capacity(payload.len() * 2);
+        let mut decompressed_data = BytesMut::with_capacity(buffer_size);
 
         // Create a reusable buffer for intermediate decompression chunks
-        let mut buffer = BytesMut::with_capacity(buffer_size);
-        buffer.resize(buffer_size, 0);
-
-        let mut offset = 0;
+        let mut buffer = Vec::with_capacity(buffer_size);
 
         // Reset the decompressor before starting to ensure no leftover state
-        self.decompressor.reset(false);
-
-        while offset < payload.len() {
-            let input = &payload[offset..];
-
-            // Decompress data into the reusable buffer
-            let status = self
-                .decompressor
-                .decompress(input, &mut buffer, FlushDecompress::Sync)?;
-
-            // Append decompressed bytes directly to `decompressed_data`
-            let bytes_written = self.decompressor.total_out() as usize - decompressed_data.len();
-            decompressed_data.extend_from_slice(&buffer[..bytes_written]);
-
-            // Update the offset based on the amount of input consumed
-            let bytes_consumed = self.decompressor.total_in() as usize - offset;
-            offset += bytes_consumed;
-
-            // Stop if the decompression is complete
-            if let Status::StreamEnd = status {
-                break;
-            }
-
-            // Dynamically grow the buffer if necessary (adaptive sizing)
-            if buffer.len() < buffer_size {
-                let new_size = cmp::min(buffer.len() * 2, 65536); // Cap growth at 64KB
-                buffer.resize(new_size, 0);
-            }
+        if self.reset_context {
+            self.decompressor.reset(false);
         }
 
-        // Convert `BytesMut` to `Vec<u8>` and return
+        let before_in = self.decompressor.total_in();
+
+        while self.decompressor.total_in() - before_in < payload.as_ref().len() as u64 {
+            let i = (self.decompressor.total_in() - before_in) as usize;
+            let input = &payload[i..];
+
+            // TODO - We are using decompress_vec, perhaps only decompress method should be
+            // more performant, the only issue with that,
+            // is that you need to manage the buffer manually
+            match self.decompressor.decompress_vec(input, &mut buffer, FlushDecompress::Sync)? {
+                Status::Ok => {
+                    decompressed_data.extend_from_slice(buffer.as_ref());
+                    buffer.clear();
+                }
+                Status::StreamEnd => break,
+                _ => {}
+            }
+        }
+        decompressed_data.truncate(decompressed_data.len());
+
         Ok(decompressed_data.to_vec())
     }
 }

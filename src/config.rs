@@ -33,6 +33,9 @@ pub struct ClientConfig {
     pub ca_file: Option<String>,
 }
 
+// TODO - Remove extensions, and only add an option named compression_enabled
+// and a second option for compression_threshold
+// then, behind the hood, set extensions all to true, and max window of 15
 /// Stores general configurations, to replace some default websockets connection parameters
 #[derive(Debug, Clone)]
 pub struct WebSocketConfig {

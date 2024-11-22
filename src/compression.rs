@@ -127,13 +127,13 @@ pub fn merge_extensions(server_extensions: Option<Extensions>, client_extensions
             (Some(server_bits), Some(client_bits)) => Some(std::cmp::min(server_bits, client_bits)),
             (Some(server_bits), None) => Some(server_bits),
             (None, Some(client_bits)) => Some(client_bits),
-            (None, None) => Some(8),
+            (None, None) => None,
         },
         server_max_window_bits: match (server_ext.server_max_window_bits, client_ext.server_max_window_bits) {
             (Some(server_bits), Some(client_bits)) => Some(std::cmp::min(server_bits, client_bits)),
             (Some(server_bits), None) => Some(server_bits),
             (None, Some(client_bits)) => Some(client_bits),
-            (None, None) => Some(8),
+            (None, None) => None,
         },
     };
     Some(merged_extensions)

@@ -5,6 +5,7 @@ use crate::message::Message;
 use crate::stream::SocketFlowStream;
 use crate::write::Writer;
 use std::sync::Arc;
+use bytes::BytesMut;
 use tokio::io::{AsyncReadExt, BufReader, ReadHalf};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
@@ -95,7 +96,7 @@ impl ReadStream {
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
                                     if fragmented_message_clone.compressed {
-                                        fragmented_message_clone.fragments = self.decoder.decompress(&fragmented_message_clone.fragments)?;
+                                        fragmented_message_clone.fragments = self.decoder.decompress(&mut BytesMut::from(&fragmented_message_clone.fragments[..]))?;
                                     }
 
                                     // TODO - Decompression if compression is enabled
@@ -155,7 +156,7 @@ impl ReadStream {
 
     async fn send_pong_frame(&mut self, payload: Vec<u8>) -> Result<(), Error> {
         let pong_frame = Frame::new(true, OpCode::Pong, payload, false);
-        self.writer.lock().await.write_frame(pong_frame).await
+        self.writer.lock().await.write_frame(pong_frame, false).await
     }
 
     pub async fn read_frame(&mut self) -> Result<Frame, Error> {
@@ -260,8 +261,9 @@ impl ReadStream {
         }
 
 
+        // println!("payload size: {}", payload.len());
         if rsv1 && final_fragment {
-            payload = self.decoder.decompress(&payload)?; // Call your custom decompression function
+            payload = self.decoder.decompress(&mut BytesMut::from(&payload[..]))?; // Call your custom decompression function
         }
 
         Ok(Frame {
@@ -276,7 +278,7 @@ impl ReadStream {
         self.writer
             .lock()
             .await
-            .write_frame(Frame::new(true, OpCode::Close, Vec::new(), false))
+            .write_frame(Frame::new(true, OpCode::Close, Vec::new(), false), false)
             .await
     }
 

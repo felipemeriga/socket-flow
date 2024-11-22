@@ -63,7 +63,10 @@ pub async fn accept_async_with_config(
     let parsed_extensions = parse_handshake(&mut buf_reader, &mut write_half, config.extensions).await?;
     config.extensions = parsed_extensions;
 
-    let decoder = Decoder::new();
+    let decoder_extensions = config.extensions.clone().unwrap_or_default();
+    // The decoder will be reading and decompressing all client messages,
+    // so we need to pass all the client extensions to it
+    let decoder = Decoder::new(decoder_extensions.client_no_context_takeover.unwrap_or_default(), decoder_extensions.client_max_window_bits);
 
     // Identify permessage-deflate for enabling compression
     second_stage_handshake(
@@ -210,7 +213,7 @@ pub async fn connect_async_with_config(addr: &str, client_config: Option<ClientC
         write_half,
         WriterKind::Client,
         client_config.unwrap_or_default().web_socket_config,
-        Decoder::new()
+        Decoder::new(true, None)
     )
         .await
 }
@@ -270,7 +273,7 @@ async fn parse_handshake(
 
     let client_extensions = parse_extensions(req.get_header_value(SEC_WEBSOCKET_EXTENSIONS).unwrap_or_default());
     let agreed_extensions = merge_extensions(server_extensions, client_extensions);
-    
+
     let accept_key = generate_websocket_accept_value(sec_websocket_key);
 
     let mut response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);

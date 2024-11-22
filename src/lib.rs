@@ -24,3 +24,4 @@ mod tests;
 mod write;
 pub mod compression;
 mod decoder;
+mod encoder;
