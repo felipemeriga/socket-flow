@@ -14,7 +14,10 @@ impl Encoder {
             Compress::new(Compression::default(), false)
         };
 
-        Self { compressor, reset_context }
+        Self {
+            compressor,
+            reset_context,
+        }
     }
 
     pub fn compress(&mut self, payload: &mut BytesMut) -> Result<Vec<u8>, std::io::Error> {

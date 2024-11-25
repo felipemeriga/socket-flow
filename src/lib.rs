@@ -10,8 +10,11 @@
 //!
 pub mod config;
 pub mod connection;
+mod decoder;
+mod encoder;
 pub mod error;
 pub mod event;
+pub mod extensions;
 mod frame;
 pub mod handshake;
 pub mod message;
@@ -21,7 +24,5 @@ pub mod server;
 pub mod split;
 pub mod stream;
 mod tests;
+mod utils;
 mod write;
-pub mod extensions;
-mod decoder;
-mod encoder;

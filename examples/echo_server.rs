@@ -1,6 +1,6 @@
 use futures::StreamExt;
 use log::*;
-use socket_flow::handshake::{accept_async};
+use socket_flow::handshake::accept_async;
 use socket_flow::stream::SocketFlowStream;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};

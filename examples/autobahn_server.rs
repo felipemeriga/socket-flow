@@ -1,11 +1,11 @@
 use futures::StreamExt;
 use log::*;
-use socket_flow::handshake::{accept_async_with_config};
+use socket_flow::config::WebSocketConfig;
+use socket_flow::extensions::Extensions;
+use socket_flow::handshake::accept_async_with_config;
 use socket_flow::stream::SocketFlowStream;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
-use socket_flow::extensions::Extensions;
-use socket_flow::config::WebSocketConfig;
 
 async fn handle_connection(_: SocketAddr, stream: TcpStream) {
     let mut config = WebSocketConfig::default();

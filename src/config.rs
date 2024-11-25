@@ -1,6 +1,6 @@
+use crate::extensions::Extensions;
 use rustls::ServerConfig as RustlsConfig;
 use std::sync::Arc;
-use crate::extensions::Extensions;
 
 /// Used for spawning a websockets server, including the general websocket
 /// connection configuration, and a tls_config, which is basically a TLS config
@@ -51,7 +51,7 @@ pub struct WebSocketConfig {
     pub max_message_size: Option<usize>,
     /// This represents the extensions that will be applied, enabling compression and
     /// modifying relevant specs about server and client compression.
-    pub extensions: Option<Extensions>
+    pub extensions: Option<Extensions>,
 }
 
 impl Default for WebSocketConfig {

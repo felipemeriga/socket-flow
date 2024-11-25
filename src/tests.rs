@@ -1,17 +1,15 @@
 #[cfg(test)]
 mod tests {
     use crate::frame::{Frame, OpCode};
-    use crate::request::{parse_to_http_request, RequestExt};
+    use crate::request::{construct_http_request, HttpRequest};
 
-    use crate::handshake::{
-        accept_async, connect_async, generate_websocket_accept_value, HTTP_ACCEPT_RESPONSE,
-        SEC_WEBSOCKET_KEY,
-    };
+    use crate::extensions::add_extension_headers;
+    use crate::handshake::{accept_async, connect_async, HTTP_ACCEPT_RESPONSE, SEC_WEBSOCKET_KEY};
     use crate::stream::SocketFlowStream;
+    use crate::utils::generate_websocket_accept_value;
     use futures::StreamExt;
-    use httparse::{Request, EMPTY_HEADER};
     use std::error::Error;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::{split, AsyncReadExt, AsyncWriteExt, BufReader};
     use tokio::net::{TcpListener, TcpStream};
 
     #[test]
@@ -43,7 +41,7 @@ mod tests {
     #[test]
     fn test_parse_to_http_request_valid() {
         let (request, host_with_port, host, use_tls) =
-            parse_to_http_request("ws://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==").unwrap();
+            construct_http_request("ws://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==").unwrap();
         assert_eq!(host_with_port, "localhost:8080");
         assert_eq!(host, "localhost");
         assert_eq!(use_tls, false);
@@ -55,13 +53,13 @@ mod tests {
 
     #[test]
     fn test_parse_to_http_request_invalid_scheme() {
-        let result = parse_to_http_request("ftp://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==");
+        let result = construct_http_request("ftp://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_to_http_request_no_host() {
-        let result = parse_to_http_request("ws://:8080", "dGhlIHNhbXBsZSBub25jZQ==");
+        let result = construct_http_request("ws://:8080", "dGhlIHNhbXBsZSBub25jZQ==");
         assert!(result.is_err());
     }
 
@@ -117,16 +115,14 @@ mod tests {
         // Simulate the server in a separate task
         let server = tokio::spawn(async move {
             // There is no need to split the stream, since we are doing everything inside this task
-            let (mut stream, _) = listener.accept().await.unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
 
-            // create a buffer for the incoming handshake request
-            let mut buffer: Vec<u8> = vec![0; 1024];
-            let n = stream.read(&mut buffer).await.unwrap();
+            let (read, mut write) = split(stream);
+            let mut buf_reader = BufReader::new(read);
 
-            let mut headers = [EMPTY_HEADER; 16];
-            let mut req = Request::new(&mut headers);
-
-            req.parse(&buffer[..n]).unwrap();
+            let mut req = HttpRequest::parse_http_request(&mut buf_reader)
+                .await
+                .unwrap();
 
             // Already testing get_header_value func, since it's easier than spliting the string to
             // find sec_websocket_key
@@ -134,9 +130,10 @@ mod tests {
 
             let accept_key = generate_websocket_accept_value(sec_websocket_key);
 
-            let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
-            stream.write_all(response.as_bytes()).await.unwrap();
-            stream.flush().await.unwrap();
+            let mut response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
+            add_extension_headers(&mut response, None);
+            write.write_all(response.as_bytes()).await.unwrap();
+            write.flush().await.unwrap();
         });
 
         // Call the connect_async function for connecting to the server

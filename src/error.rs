@@ -1,5 +1,4 @@
 use crate::frame::Frame;
-use httparse::Error as HttpParseError;
 use pki_types::InvalidDnsNameError;
 use std::io;
 use std::string::FromUtf8Error;
@@ -94,6 +93,24 @@ pub enum Error {
     InvalidOpcode,
 
     // HTTP Errors
+    #[error("Failed to parse HTTP headers")]
+    HttpParseError,
+
+    #[error("Invalid HTTP request line")]
+    InvalidHTTPRequestLine,
+
+    #[error("Missing HTTP method")]
+    MissingHTTPMethod,
+
+    #[error("Missing HTTP URI")]
+    MissingHTTPUri,
+
+    #[error("Missing HTTP version")]
+    MissingHTTPVersion,
+
+    #[error("Invalid Content-Length")]
+    InvalidContentLength,
+
     #[error("{source}")]
     URLParseError {
         #[from]
@@ -109,12 +126,6 @@ pub enum Error {
     #[error("URL has no port")]
     URLNoPort,
 
-    #[error("{source}")]
-    HttpParseError {
-        #[from]
-        source: HttpParseError,
-    },
-
     #[error("Incomplete HTTP request")]
     IncompleteHTTPRequest,
 
@@ -128,8 +139,7 @@ pub enum Error {
     #[error("use_tls = `{0}` argument does not match the passed URL scheme: `{1}`")]
     SchemeAgainstTlsConfig(bool, String),
 
-
     // Compression / Decompression Errors
     #[error("max_window_bits should be a value between 8 and 15")]
-    InvalidMaxWindowBits
+    InvalidMaxWindowBits,
 }

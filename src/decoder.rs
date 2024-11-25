@@ -24,7 +24,10 @@ impl Decoder {
         } else {
             Decompress::new(false)
         };
-        Self { decompressor, reset_context }
+        Self {
+            decompressor,
+            reset_context,
+        }
     }
 
     pub fn decompress(&mut self, payload: &mut BytesMut) -> Result<Vec<u8>, std::io::Error> {
@@ -59,7 +62,10 @@ impl Decoder {
             // TODO - We are using decompress_vec, perhaps only decompress method should be
             // more performant, the only issue with that,
             // is that you need to manage the buffer manually
-            match self.decompressor.decompress_vec(input, &mut buffer, FlushDecompress::Sync)? {
+            match self
+                .decompressor
+                .decompress_vec(input, &mut buffer, FlushDecompress::Sync)?
+            {
                 Status::Ok => {
                     decompressed_data.extend_from_slice(buffer.as_ref());
                     buffer.clear();

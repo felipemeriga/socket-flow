@@ -45,7 +45,7 @@ pub struct Frame {
     pub final_fragment: bool,
     pub opcode: OpCode,
     pub payload: Vec<u8>,
-    pub compressed: bool
+    pub compressed: bool,
 }
 
 impl Frame {
@@ -54,7 +54,7 @@ impl Frame {
             final_fragment,
             opcode,
             payload,
-            compressed
+            compressed,
         }
     }
 }

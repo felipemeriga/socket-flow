@@ -1,16 +1,16 @@
 use crate::config::WebSocketConfig;
+use crate::decoder::Decoder;
 use crate::error::Error;
 use crate::frame::{Frame, OpCode};
 use crate::message::Message;
 use crate::stream::SocketFlowStream;
 use crate::write::Writer;
-use std::sync::Arc;
 use bytes::BytesMut;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, BufReader, ReadHalf};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
-use crate::decoder::Decoder;
 
 #[derive(Clone)]
 pub(crate) struct FragmentedMessage {
@@ -96,7 +96,10 @@ impl ReadStream {
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
                                     if fragmented_message_clone.compressed {
-                                        fragmented_message_clone.fragments = self.decoder.decompress(&mut BytesMut::from(&fragmented_message_clone.fragments[..]))?;
+                                        fragmented_message_clone.fragments =
+                                            self.decoder.decompress(&mut BytesMut::from(
+                                                &fragmented_message_clone.fragments[..],
+                                            ))?;
                                     }
 
                                     // TODO - Decompression if compression is enabled
@@ -112,7 +115,7 @@ impl ReadStream {
                                         fragmented_message_clone.fragments,
                                         false,
                                     ))
-                                        .await?;
+                                    .await?;
                                 }
                             } else {
                                 Err(Error::InvalidContinuationFrame)?
@@ -156,7 +159,11 @@ impl ReadStream {
 
     async fn send_pong_frame(&mut self, payload: Vec<u8>) -> Result<(), Error> {
         let pong_frame = Frame::new(true, OpCode::Pong, payload, false);
-        self.writer.lock().await.write_frame(pong_frame, false).await
+        self.writer
+            .lock()
+            .await
+            .write_frame(pong_frame, false)
+            .await
     }
 
     pub async fn read_frame(&mut self) -> Result<Frame, Error> {
@@ -179,7 +186,16 @@ impl ReadStream {
         let rsv2 = (header[0] & 0b00100000) != 0;
         let rsv3 = (header[0] & 0b00010000) != 0;
 
-        if rsv2 || rsv3 || (rsv1 && !self.config.extensions.clone().unwrap_or_default().permessage_deflate) {
+        if rsv2
+            || rsv3
+            || (rsv1
+                && !self
+                    .config
+                    .extensions
+                    .clone()
+                    .unwrap_or_default()
+                    .permessage_deflate)
+        {
             return Err(Error::RSVNotZero);
         }
 
@@ -239,7 +255,7 @@ impl ReadStream {
             Duration::from_secs(5),
             self.buf_reader.read_exact(&mut payload),
         )
-            .await;
+        .await;
         match read_result {
             Ok(Ok(_)) => {}        // Continue processing the payload
             Ok(Err(e)) => Err(e)?, // An error occurred while reading
@@ -260,10 +276,10 @@ impl ReadStream {
             }
         }
 
-
         // println!("payload size: {}", payload.len());
         if rsv1 && final_fragment {
-            payload = self.decoder.decompress(&mut BytesMut::from(&payload[..]))?; // Call your custom decompression function
+            payload = self.decoder.decompress(&mut BytesMut::from(&payload[..]))?;
+            // Call your custom decompression function
         }
 
         Ok(Frame {

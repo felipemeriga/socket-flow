@@ -1,18 +1,18 @@
 use crate::config::WebSocketConfig;
+use crate::encoder::Encoder;
 use crate::error::Error;
 use crate::frame::{Frame, OpCode};
 use crate::message::Message;
 use crate::write::Writer;
+use bytes::BytesMut;
 use futures::Stream;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use bytes::BytesMut;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
-use crate::encoder::Encoder;
 
 const PAYLOAD_SIZE_COMPRESSION_ENABLE: usize = 1;
 
@@ -42,7 +42,11 @@ pub struct WSWriter {
 }
 
 impl WSWriter {
-    pub fn new(writer: Arc<Mutex<Writer>>, web_socket_config: WebSocketConfig, encoder: Encoder) -> Self {
+    pub fn new(
+        writer: Arc<Mutex<Writer>>,
+        web_socket_config: WebSocketConfig,
+        encoder: Encoder,
+    ) -> Self {
         Self {
             writer,
             web_socket_config,
@@ -129,8 +133,13 @@ impl WSWriter {
                 OpCode::Continue
             };
 
-            self.write_frames(vec![Frame::new(is_final, opcode, Vec::from(chunk), compressed)])
-                .await?
+            self.write_frames(vec![Frame::new(
+                is_final,
+                opcode,
+                Vec::from(chunk),
+                compressed,
+            )])
+            .await?
         }
 
         Ok(())
@@ -139,7 +148,14 @@ impl WSWriter {
     pub(crate) fn check_compression(&mut self, data: &mut Vec<u8>) -> Result<bool, Error> {
         let mut compressed = false;
         // If compression is enabled, and the payload is greater than 8KB, compress the payload
-        if self.web_socket_config.extensions.clone().unwrap_or_default().permessage_deflate && data.len() > PAYLOAD_SIZE_COMPRESSION_ENABLE {
+        if self
+            .web_socket_config
+            .extensions
+            .clone()
+            .unwrap_or_default()
+            .permessage_deflate
+            && data.len() > PAYLOAD_SIZE_COMPRESSION_ENABLE
+        {
             *data = self.encoder.compress(&mut BytesMut::from(&data[..]))?;
             compressed = true;
         }
@@ -199,8 +215,7 @@ impl WSWriter {
         }
 
         let frames = self.convert_to_frames(message)?;
-        self.write_frames(frames)
-            .await
+        self.write_frames(frames).await
     }
 
     pub(crate) async fn write_frames(&mut self, frames: Vec<Frame>) -> Result<(), Error> {
@@ -209,7 +224,11 @@ impl WSWriter {
         let mut set_rsv1_first_frame = !frames.is_empty() && frames[0].compressed;
 
         for frame in frames {
-            self.writer.lock().await.write_frame(frame, set_rsv1_first_frame).await?;
+            self.writer
+                .lock()
+                .await
+                .write_frame(frame, set_rsv1_first_frame)
+                .await?;
             // Setting it to false,
             // since we only need
             // to set RSV1 bit for the first frame if compression is enabled

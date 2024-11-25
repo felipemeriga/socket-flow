@@ -4,7 +4,6 @@ const SERVER_NO_CONTEXT_TAKEOVER: &str = "server_no_context_takeover";
 const CLIENT_MAX_WINDOW_BITS: &str = "client_max_window_bits";
 const SERVER_MAX_WINDOW_BITS: &str = "server_max_window_bits";
 
-
 /// It's important to enhance that some compression extensions,
 /// in some cases affects compression and
 /// decompression(client_no_context_takeover, server_no_context_takeover),
@@ -40,7 +39,6 @@ pub struct Extensions {
     pub server_max_window_bits: Option<u8>,
 }
 
-// TODO - In first instance we will use this function for server only
 // In first stage server will accept all the client extension configs, and
 // will reply the handshake request with everything that came from client
 // on a second stage, the end-user will set the default extension settings when calling
@@ -61,13 +59,15 @@ pub fn parse_extensions(extensions_header_value: String) -> Option<Extensions> {
             if !extension_str.contains('=') {
                 extensions.client_max_window_bits = Some(15);
             } else {
-                extensions.client_max_window_bits = extension_str.trim().split('=').last()?.parse::<u8>().ok();
+                extensions.client_max_window_bits =
+                    extension_str.trim().split('=').last()?.parse::<u8>().ok();
             }
         } else if extension_str.trim().starts_with(SERVER_MAX_WINDOW_BITS) {
             if !extension_str.contains('=') {
                 extensions.server_max_window_bits = Some(15);
             } else {
-                extensions.server_max_window_bits = extension_str.trim().split('=').last()?.parse::<u8>().ok();
+                extensions.server_max_window_bits =
+                    extension_str.trim().split('=').last()?.parse::<u8>().ok();
             }
         }
     }
@@ -78,7 +78,10 @@ pub fn parse_extensions(extensions_header_value: String) -> Option<Extensions> {
     Some(extensions)
 }
 
-pub fn merge_extensions(server_extensions: Option<Extensions>, client_extensions: Option<Extensions>) -> Option<Extensions> {
+pub fn merge_extensions(
+    server_extensions: Option<Extensions>,
+    client_extensions: Option<Extensions>,
+) -> Option<Extensions> {
     let server_ext = match server_extensions {
         Some(ext) => ext,
         None => return None,
@@ -89,15 +92,25 @@ pub fn merge_extensions(server_extensions: Option<Extensions>, client_extensions
     };
     let merged_extensions = Extensions {
         permessage_deflate: client_ext.permessage_deflate && server_ext.permessage_deflate,
-        client_no_context_takeover: server_ext.client_no_context_takeover.and(client_ext.client_no_context_takeover),
-        server_no_context_takeover: server_ext.server_no_context_takeover.and(client_ext.server_no_context_takeover),
-        client_max_window_bits: match (server_ext.client_max_window_bits, client_ext.client_max_window_bits) {
+        client_no_context_takeover: server_ext
+            .client_no_context_takeover
+            .and(client_ext.client_no_context_takeover),
+        server_no_context_takeover: server_ext
+            .server_no_context_takeover
+            .and(client_ext.server_no_context_takeover),
+        client_max_window_bits: match (
+            server_ext.client_max_window_bits,
+            client_ext.client_max_window_bits,
+        ) {
             (Some(server_bits), Some(client_bits)) => Some(std::cmp::min(server_bits, client_bits)),
             (Some(server_bits), None) => Some(server_bits),
             (None, Some(client_bits)) => Some(client_bits),
             (None, None) => None,
         },
-        server_max_window_bits: match (server_ext.server_max_window_bits, client_ext.server_max_window_bits) {
+        server_max_window_bits: match (
+            server_ext.server_max_window_bits,
+            client_ext.server_max_window_bits,
+        ) {
             (Some(server_bits), Some(client_bits)) => Some(std::cmp::min(server_bits, client_bits)),
             (Some(server_bits), None) => Some(server_bits),
             (None, Some(client_bits)) => Some(client_bits),
@@ -115,10 +128,18 @@ pub fn add_extension_headers(request: &mut String, extensions: Option<Extensions
         Some(extensions) => {
             if extensions.permessage_deflate {
                 request.push_str(&format!("Sec-WebSocket-Extensions: {}", PERMESSAGE_DEFLATE));
-                if let Some(true) = extensions.client_no_context_takeover { request.push_str(&format!("; {}", CLIENT_NO_CONTEXT_TAKEOVER)) }
-                if let Some(true) = extensions.server_no_context_takeover { request.push_str(&format!("; {}", SERVER_NO_CONTEXT_TAKEOVER)) }
-                if let Some(bits) = extensions.client_max_window_bits { request.push_str(&format!("; {}={}", CLIENT_MAX_WINDOW_BITS, bits)) }
-                if let Some(bits) = extensions.server_max_window_bits { request.push_str(&format!("; {}={}", SERVER_MAX_WINDOW_BITS, bits)) }
+                if let Some(true) = extensions.client_no_context_takeover {
+                    request.push_str(&format!("; {}", CLIENT_NO_CONTEXT_TAKEOVER))
+                }
+                if let Some(true) = extensions.server_no_context_takeover {
+                    request.push_str(&format!("; {}", SERVER_NO_CONTEXT_TAKEOVER))
+                }
+                if let Some(bits) = extensions.client_max_window_bits {
+                    request.push_str(&format!("; {}={}", CLIENT_MAX_WINDOW_BITS, bits))
+                }
+                if let Some(bits) = extensions.server_max_window_bits {
+                    request.push_str(&format!("; {}={}", SERVER_MAX_WINDOW_BITS, bits))
+                }
             }
             request.push_str("\r\n\r\n");
         }
