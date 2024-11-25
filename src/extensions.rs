@@ -4,38 +4,6 @@ const SERVER_NO_CONTEXT_TAKEOVER: &str = "server_no_context_takeover";
 const CLIENT_MAX_WINDOW_BITS: &str = "client_max_window_bits";
 const SERVER_MAX_WINDOW_BITS: &str = "server_max_window_bits";
 
-// #[derive(Copy, Clone)]
-// pub enum MaxWindowBits {
-//     Eight = 8,
-//     Nine = 9,
-//     Ten = 10,
-//     Eleven = 11,
-//     Twelve = 12,
-//     Thirteen = 13,
-//     Fourteen = 14,
-//     Fifteen = 15,
-// }
-//
-// impl MaxWindowBits {
-//     fn from_u8(value: u8) -> Result<Self, Error> {
-//         match value {
-//             8 => Ok(Eight),
-//             9 => Ok(Nine),
-//             10 => Ok(Ten),
-//             11 => Ok(Eleven),
-//             12 => Ok(Twelve),
-//             13 => Ok(Thirteen),
-//             14 => Ok(Fourteen),
-//             15 => Ok(Fifteen),
-//             _ => Err(Error::InvalidMaxWindowBits)
-//         }
-//     }
-//
-//     fn to_u8(&self) -> u8 {
-//        *self as u8
-//     }
-// }
-
 
 /// It's important to enhance that some compression extensions,
 /// in some cases affects compression and

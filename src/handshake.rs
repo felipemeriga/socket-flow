@@ -23,7 +23,7 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use tokio_rustls::{TlsConnector, TlsStream};
 use tokio_stream::wrappers::ReceiverStream;
-use crate::compression::{add_extension_headers, Extensions, merge_extensions, parse_extensions};
+use crate::extensions::{add_extension_headers, Extensions, merge_extensions, parse_extensions};
 use crate::decoder::Decoder;
 use crate::encoder::Encoder;
 

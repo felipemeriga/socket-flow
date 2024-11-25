@@ -4,8 +4,6 @@ use socket_flow::handshake::{accept_async};
 use socket_flow::stream::SocketFlowStream;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
-use socket_flow::compression::Extensions;
-use socket_flow::config::WebSocketConfig;
 
 async fn handle_connection(_: SocketAddr, stream: TcpStream) {
     match accept_async(SocketFlowStream::Plain(stream)).await {

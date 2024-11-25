@@ -14,6 +14,8 @@ use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 use crate::encoder::Encoder;
 
+const PAYLOAD_SIZE_COMPRESSION_ENABLE: usize = 1;
+
 pub struct WSReader {
     read_rx: ReceiverStream<Result<Message, Error>>,
 }
@@ -36,7 +38,7 @@ pub struct WSWriter {
     writer: Arc<Mutex<Writer>>,
     web_socket_config: WebSocketConfig,
     // TODO - Find a way to don't expose the decoder to the end-user
-    encoder: Encoder
+    encoder: Encoder,
 }
 
 impl WSWriter {
@@ -44,7 +46,7 @@ impl WSWriter {
         Self {
             writer,
             web_socket_config,
-            encoder
+            encoder,
         }
     }
 
@@ -96,7 +98,7 @@ impl WSWriter {
     // messages, and Continue opcode
     pub async fn send_large_data_fragmented(
         &mut self,
-        data: Vec<u8>,
+        mut data: Vec<u8>,
         fragment_size: usize,
     ) -> Result<(), Error> {
         // Each fragment size will be limited by max_frame_size config,
@@ -113,6 +115,9 @@ impl WSWriter {
             return Err(Error::MaxMessageSize);
         }
 
+        // This function will check if compression is enabled, and apply if needed
+        let compressed = self.check_compression(&mut data)?;
+
         let chunks = data.chunks(fragment_size);
         let total_chunks = chunks.len();
 
@@ -124,12 +129,22 @@ impl WSWriter {
                 OpCode::Continue
             };
 
-            // TODO - add compression
-            self.write_frames(vec![Frame::new(is_final, opcode, Vec::from(chunk), false)])
+            self.write_frames(vec![Frame::new(is_final, opcode, Vec::from(chunk), compressed)])
                 .await?
         }
 
         Ok(())
+    }
+
+    pub(crate) fn check_compression(&mut self, data: &mut Vec<u8>) -> Result<bool, Error> {
+        let mut compressed = false;
+        // If compression is enabled, and the payload is greater than 8KB, compress the payload
+        if self.web_socket_config.extensions.clone().unwrap_or_default().permessage_deflate && data.len() > PAYLOAD_SIZE_COMPRESSION_ENABLE {
+            *data = self.encoder.compress(&mut BytesMut::from(&data[..]))?;
+            compressed = true;
+        }
+
+        Ok(compressed)
     }
 
     pub(crate) fn convert_to_frames(&mut self, message: Message) -> Result<Vec<Frame>, Error> {
@@ -149,20 +164,14 @@ impl WSWriter {
                 final_fragment: true,
                 opcode,
                 payload,
-                compressed: false
+                compressed: false,
             }]);
         }
 
         let max_frame_size = self.web_socket_config.max_frame_size.unwrap_or_default();
         let mut frames = Vec::new();
-        let mut compressed = false;
-
-        // If compression is enabled, and the payload is greater than 8KB, compress the payload
-        // TODO - Change to constant
-        if self.web_socket_config.extensions.clone().unwrap_or_default().permessage_deflate && payload.len() > 8192 {
-            payload = self.encoder.compress(&mut BytesMut::from(&payload[..]))?;
-            compressed = true;
-        }
+        // This function will check if compression is enabled, and apply if needed
+        let compressed = self.check_compression(&mut payload)?;
 
         for chunk in payload.chunks(max_frame_size) {
             frames.push(Frame {
@@ -173,7 +182,7 @@ impl WSWriter {
                     OpCode::Continue
                 },
                 payload: chunk.to_vec(),
-                compressed
+                compressed,
             });
         }
 
@@ -191,7 +200,7 @@ impl WSWriter {
 
         let frames = self.convert_to_frames(message)?;
         self.write_frames(frames)
-        .await
+            .await
     }
 
     pub(crate) async fn write_frames(&mut self, frames: Vec<Frame>) -> Result<(), Error> {

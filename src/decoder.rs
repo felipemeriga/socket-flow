@@ -45,6 +45,13 @@ impl Decoder {
 
         let before_in = self.decompressor.total_in();
 
+        // Here on the while loop, we need to use decompressor.total_in() method, because
+        // when we don't need to reset the context between decompression processes,
+        // the decompressor will keep the number of bytes decompressed, also the client
+        // responsible for compressing the payload, which is also keeping the context, will send
+        // smaller payloads, hopping that the receiver also is keeping the context
+        // That is why the handshake part is really important, to ensure we don't have a
+        // misalignment.
         while self.decompressor.total_in() - before_in < payload.as_ref().len() as u64 {
             let i = (self.decompressor.total_in() - before_in) as usize;
             let input = &payload[i..];

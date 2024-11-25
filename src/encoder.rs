@@ -27,7 +27,10 @@ impl Encoder {
 
         let before_in = self.compressor.total_in();
 
-        // Incremental compression loop
+        // Incremental compression loop, where we need to use this total_in() logic, when
+        // we are keeping the context between compressions,
+        // which makes the process easier,
+        // and reduce the payload size.
         while self.compressor.total_in() - before_in < payload.as_ref().len() as u64 {
             let i = (self.compressor.total_in() - before_in) as usize;
             let input = &payload[i..];

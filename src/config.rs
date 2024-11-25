@@ -1,6 +1,6 @@
 use rustls::ServerConfig as RustlsConfig;
 use std::sync::Arc;
-use crate::compression::Extensions;
+use crate::extensions::Extensions;
 
 /// Used for spawning a websockets server, including the general websocket
 /// connection configuration, and a tls_config, which is basically a TLS config
