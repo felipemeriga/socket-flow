@@ -69,7 +69,7 @@ impl Writer {
 
     // Method used for writing frames into the socket by clients
     pub async fn write_frame_client(&mut self, frame: Frame, set_rsv1: bool) -> Result<(), Error> {
-        let mut rng = StdRng::from_rng(rand::thread_rng());
+        let mut rng = StdRng::from_rng(&mut rand::rng());
         // According to Websockets RFC, all frames sent from the client,
         // needs to have the payload masked
         let mask = [

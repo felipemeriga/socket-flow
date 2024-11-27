@@ -86,10 +86,10 @@ jobs:
           aws s3 sync ./autobahn/server/ s3://socket-flow-autobahn-server/
         if: github.ref == 'refs/heads/main'
 
-#      - name: Running Autobahn TestSuite for the client
-#        run: ./scripts/autobahn-client.sh
-#
-#      - name: Upload Autobahn client test results to S3
-#        run: |
-#          aws s3 sync ./autobahn/client/ s3://socket-flow-autobahn-client/
-#        if: github.ref == 'refs/heads/main'
+      - name: Running Autobahn TestSuite for the client
+        run: ./scripts/autobahn-client.sh
+
+      - name: Upload Autobahn client test results to S3
+        run: |
+          aws s3 sync ./autobahn/client/ s3://socket-flow-autobahn-client/
+        if: github.ref == 'refs/heads/main'
