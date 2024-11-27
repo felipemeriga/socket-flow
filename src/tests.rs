@@ -41,7 +41,7 @@ mod tests {
     #[test]
     fn test_parse_to_http_request_valid() {
         let (request, host_with_port, host, use_tls) =
-            construct_http_request("ws://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==").unwrap();
+            construct_http_request("ws://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==", None).unwrap();
         assert_eq!(host_with_port, "localhost:8080");
         assert_eq!(host, "localhost");
         assert_eq!(use_tls, false);
@@ -53,13 +53,13 @@ mod tests {
 
     #[test]
     fn test_parse_to_http_request_invalid_scheme() {
-        let result = construct_http_request("ftp://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==");
+        let result = construct_http_request("ftp://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==", None);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_to_http_request_no_host() {
-        let result = construct_http_request("ws://:8080", "dGhlIHNhbXBsZSBub25jZQ==");
+        let result = construct_http_request("ws://:8080", "dGhlIHNhbXBsZSBub25jZQ==", None);
         assert!(result.is_err());
     }
 

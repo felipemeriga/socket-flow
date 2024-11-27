@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader, ReadHalf};
 use tokio::time::{timeout, Duration};
 use url::Url;
+use crate::extensions::{add_extension_headers, Extensions};
 
 const HTTP_REQUEST_DELIMITER: &str = "\r\n\r\n";
 
@@ -12,6 +13,7 @@ const HTTP_REQUEST_DELIMITER: &str = "\r\n\r\n";
 pub fn construct_http_request(
     ws_url: &str,
     key: &str,
+    extensions: Option<Extensions>
 ) -> Result<(String, String, String, bool), Error> {
     let parsed_url = Url::parse(ws_url)?;
     let mut use_tls = false;
@@ -53,12 +55,14 @@ pub fn construct_http_request(
     // Since we already have all the info, it isn't worth converting everything to a HTTP request type
     // and considering everything is bits into the TCP packets, we simply manipulate the string, and
     // convert it to bytes when sending to the server
-    let request = format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n\r\n",
+    let mut request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n",
         request_path,
         request_host_field,
         key,
     );
+
+    add_extension_headers(&mut request, extensions);
 
     Ok((request, host_with_port, String::from(host), use_tls))
 }

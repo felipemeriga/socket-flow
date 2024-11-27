@@ -85,7 +85,7 @@ pub async fn accept_async_with_config(
         decoder,
         encoder,
     )
-    .await
+        .await
 }
 
 async fn second_stage_handshake(
@@ -149,7 +149,9 @@ pub async fn connect_async(addr: &str) -> Result {
 pub async fn connect_async_with_config(addr: &str, client_config: Option<ClientConfig>) -> Result {
     let client_websocket_key = generate_websocket_key();
 
-    let (request, hostname, host, use_tls) = construct_http_request(addr, &client_websocket_key)?;
+    let client_extensions = client_config.clone().unwrap_or_default().web_socket_config.extensions;
+
+    let (request, hostname, host, use_tls) = construct_http_request(addr, &client_websocket_key, client_extensions)?;
 
     let stream = TcpStream::connect(hostname).await?;
 
@@ -225,7 +227,7 @@ pub async fn connect_async_with_config(addr: &str, client_config: Option<ClientC
         decoder,
         encoder,
     )
-    .await
+        .await
 }
 
 async fn parse_handshake_server(
