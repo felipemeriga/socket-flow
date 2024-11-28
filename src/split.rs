@@ -35,9 +35,8 @@ impl Stream for WSReader {
 }
 
 pub struct WSWriter {
-    writer: Arc<Mutex<Writer>>,
-    web_socket_config: WebSocketConfig,
-    // TODO - Find a way to don't expose the decoder to the end-user
+    pub writer: Arc<Mutex<Writer>>,
+    pub web_socket_config: WebSocketConfig,
     encoder: Encoder,
 }
 

@@ -3,14 +3,21 @@ mod tests {
     use crate::frame::{Frame, OpCode};
     use crate::request::{construct_http_request, HttpRequest};
 
-    use crate::extensions::add_extension_headers;
-    use crate::handshake::{accept_async, connect_async, HTTP_ACCEPT_RESPONSE, SEC_WEBSOCKET_KEY};
+    use crate::extensions::{add_extension_headers, Extensions};
+    use crate::handshake::{accept_async, accept_async_with_config, connect_async, connect_async_with_config, HTTP_ACCEPT_RESPONSE, SEC_WEBSOCKET_KEY};
     use crate::stream::SocketFlowStream;
     use crate::utils::generate_websocket_accept_value;
     use futures::StreamExt;
     use std::error::Error;
+    use bytes::BytesMut;
+    use rand::Rng;
     use tokio::io::{split, AsyncReadExt, AsyncWriteExt, BufReader};
     use tokio::net::{TcpListener, TcpStream};
+    use serde::Serialize;
+    use crate::config::{ClientConfig, WebSocketConfig};
+    use crate::decoder::Decoder;
+    use crate::encoder::Encoder;
+    use serde_json::json;
 
     #[test]
     fn test_opcode() {
@@ -181,6 +188,140 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_accept_and_connect() -> Result<(), Box<dyn Error>> {
+        // Start a TCP listener (server) to accept a connection
+        let listener = TcpListener::bind("127.0.0.1:9007").await?; // bind to an available port
+        // payload to validate the message
+        let payload = vec![1, 2, 3, 4];
+
+        // Simulate the server in a separate task
+        let payload_clone = payload.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+
+            let mut server_connection = accept_async(SocketFlowStream::Plain(stream)).await.unwrap();
+            if let Some(result) = server_connection.next().await {
+                match result {
+                    Ok(message) => assert_eq!(message.as_binary(), payload_clone),
+                    Err(e) => panic!("Error occurred: {:?}", e),
+                };
+            }
+        });
+
+        // Call the connect_async function for connecting to the server
+        let mut client_connection = connect_async("ws://127.0.0.1:9007").await?;
+        // send the payload
+        client_connection.send(payload).await.unwrap();
+        client_connection.close_connection().await.unwrap();
+
+        server.await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_compress_decompress_payload_reset_context() -> Result<(), Box<dyn Error>> {
+        let payload = vec![1, 2, 3, 4, 5];
+
+        let mut encoder = Encoder::new(true, Some(15));
+        let mut decoder = Decoder::new(true, Some(15));
+
+        let encoded_data = encoder.compress(&mut BytesMut::from(&payload[..]))?;
+        let decoded_data = decoder.decompress(&mut BytesMut::from(&encoded_data[..]))?;
+
+        assert_eq!(payload, decoded_data);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_compress_decompress_payload_keep_context() -> Result<(), Box<dyn Error>> {
+        let payload = vec![1, 2, 3, 4, 5];
+
+        let mut encoder = Encoder::new(false, Some(15));
+        let mut decoder = Decoder::new(false, Some(15));
+
+        let encoded_data = encoder.compress(&mut BytesMut::from(&payload[..]))?;
+        let _ = decoder.decompress(&mut BytesMut::from(&encoded_data[..]))?;
+
+        let _ = encoder.compress(&mut BytesMut::from(&payload[..]))?;
+        let second_decoded_data = decoder.decompress(&mut BytesMut::from(&encoded_data[..]))?;
+
+        assert_eq!(payload, second_decoded_data);
+        Ok(())
+    }
+
+    #[derive(Serialize)]
+    struct User {
+        id: i32,
+        name: String,
+    }
+    fn generate_users() -> Vec<u8> {
+        let mut users: Vec<User> = Vec::new();
+
+        for id in 0..500 {
+            let name: String = rand::rng()
+                .sample_iter(&rand::distr::Alphanumeric)
+                .take(30)
+                .map(char::from)
+                .collect();
+
+            users.push(User { id, name });
+        }
+
+        let json = json!(&users);
+        let serialized = serde_json::to_string(&json).unwrap();
+        serialized.into_bytes()
+    }
+
+    #[tokio::test]
+    async fn test_accept_and_connect_extension() -> Result<(), Box<dyn Error>> {
+        // Start a TCP listener (server) to accept a connection
+        let listener = TcpListener::bind("127.0.0.1:9008").await?; // bind to an available port
+        let payload = generate_users();
+
+        // Simulate the server in a separate task
+        let payload_clone = payload.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut config = WebSocketConfig::default();
+            config.extensions = Some(Extensions {
+                permessage_deflate: true,
+                client_no_context_takeover: Some(true),
+                server_no_context_takeover: Some(true),
+                client_max_window_bits: None,
+                server_max_window_bits: None,
+            });
+
+            let mut server_connection = accept_async_with_config(SocketFlowStream::Plain(stream), Some(config)).await.unwrap();
+            if let Some(result) = server_connection.next().await {
+                match result {
+                    Ok(message) => assert_eq!(message.as_binary(), payload_clone),
+                    Err(e) => panic!("Error occurred: {:?}", e),
+                };
+            }
+        });
+
+        let mut websocket_config = WebSocketConfig::default();
+        websocket_config.extensions = Some(Extensions {
+            permessage_deflate: true,
+            client_no_context_takeover: Some(true),
+            server_no_context_takeover: Some(true),
+            client_max_window_bits: None,
+            server_max_window_bits: None,
+        });
+        let mut client_config = ClientConfig::default();
+        client_config.web_socket_config = websocket_config;
+
+        // Call the connect_async function for connecting to the server
+        let mut client_connection = connect_async_with_config("ws://127.0.0.1:9008", Some(client_config)).await?;
+        // send the payload
+        client_connection.send(payload).await.unwrap();
+        client_connection.close_connection().await.unwrap();
+
+        server.await?;
         Ok(())
     }
 }

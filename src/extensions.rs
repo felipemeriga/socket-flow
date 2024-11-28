@@ -78,6 +78,10 @@ pub fn parse_extensions(extensions_header_value: String) -> Option<Extensions> {
     Some(extensions)
 }
 
+// Server will use this function, to merge the client requested extensions,
+// with server configured extensions.
+// It will ensure that both parties are capable of supporting the last
+// agreed extensions
 pub fn merge_extensions(
     server_extensions: Option<Extensions>,
     client_extensions: Option<Extensions>,
@@ -120,6 +124,7 @@ pub fn merge_extensions(
     Some(merged_extensions)
 }
 
+// Function used for constructing the HTTP request headers for extensions
 pub fn add_extension_headers(request: &mut String, extensions: Option<Extensions>) {
     match extensions {
         None => {

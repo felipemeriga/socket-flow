@@ -179,7 +179,7 @@ Here is an example of how to run a client, that will perform some operations and
 use futures::StreamExt;
 use log::*;
 use rand::distr::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use socket_flow::handshake::connect_async;
 use tokio::select;
 use tokio::time::{interval, Duration};
@@ -236,7 +236,7 @@ async fn main() {
 }
 
 fn generate_random_string() -> String {
-    thread_rng()
+    rng()
         .sample_iter(&Alphanumeric)
         .take(30)
         .map(char::from)
@@ -269,6 +269,11 @@ for adding TLS in your client/server implementation with socket-flow.
 
 For checking how to set up TLS in server/client,
 and finding some examples, go to: [TLS Examples](https://github.com/felipemeriga/socket-flow/blob/main/TLS.md).
+
+## Config and Compression
+
+For setting some parameters of your websockets connection, and enabling compression and decompression
+you can check how to set up that over [Config and Extensions](https://github.com/felipemeriga/socket-flow/blob/main/CONFIG.md).
 
 ## References
 

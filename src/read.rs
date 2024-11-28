@@ -102,7 +102,6 @@ impl ReadStream {
                                             ))?;
                                     }
 
-                                    // TODO - Decompression if compression is enabled
                                     // Since a clone copies the entire reference to a new reference,
                                     // if you change the original data,
                                     // the copy won't be modified
