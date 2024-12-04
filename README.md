@@ -32,9 +32,7 @@ Most of all WebSockets RFC features are implemented, like:
 - Error handling
 - It passes the autobahn-test-suite
 - TLS Support
-
-Features to be added:
-- Compression
+- Extensions (Compression and Decompression by permessage-deflate)
 
 ## Usage
 
@@ -272,7 +270,7 @@ and finding some examples, go to: [TLS Examples](https://github.com/felipemeriga
 
 ## Config and Compression
 
-For setting some parameters of your websockets connection, and enabling compression and decompression
+For setting some parameters of your websockets connection, and enabling compression and decompression, 
 you can check how to set up that over [Config and Extensions](https://github.com/felipemeriga/socket-flow/blob/main/CONFIG.md).
 
 ## References
