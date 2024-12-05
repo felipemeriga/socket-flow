@@ -20,20 +20,26 @@ impl Writer {
         Self { write_half, kind }
     }
 
-    pub async fn write_frame(&mut self, frame: Frame) -> Result<(), Error> {
+    pub async fn write_frame(&mut self, frame: Frame, set_rsv1: bool) -> Result<(), Error> {
         match self.kind {
-            WriterKind::Client => self.write_frame_client(frame).await,
-            WriterKind::Server => self.write_frame_server(frame).await,
+            WriterKind::Client => self.write_frame_client(frame, set_rsv1).await,
+            WriterKind::Server => self.write_frame_server(frame, set_rsv1).await,
         }
     }
 
-    pub async fn write_frame_server(&mut self, frame: Frame) -> Result<(), Error> {
+    pub async fn write_frame_server(&mut self, frame: Frame, set_rsv1: bool) -> Result<(), Error> {
         // The first byte of a websockets frame contains the final fragment bit, and the OpCode
         // in (frame.final_fragment as u8) << 7 we are doing a left bitwise shift, if final_fragment is true
         // it will be converted from 10000000 to 1
         // after that it will perform a bitwise OR operation with OpCode, so if Opcode is text(0x1)
         // the final result will be 10000001, which is 129 decimal
-        let first_byte = (frame.final_fragment as u8) << 7 | frame.opcode.as_u8();
+        let mut first_byte = (frame.final_fragment as u8) << 7 | frame.opcode.as_u8();
+
+        // Set the RSV1 bit if compression is enabled for this frame
+        if set_rsv1 {
+            first_byte |= 0x40; // Set RSV1
+        }
+
         let payload_len = frame.payload.len();
 
         self.write_half.write_all(&[first_byte]).await?;
@@ -62,8 +68,8 @@ impl Writer {
     }
 
     // Method used for writing frames into the socket by clients
-    pub async fn write_frame_client(&mut self, frame: Frame) -> Result<(), Error> {
-        let mut rng = StdRng::from_rng(rand::thread_rng());
+    pub async fn write_frame_client(&mut self, frame: Frame, set_rsv1: bool) -> Result<(), Error> {
+        let mut rng = StdRng::from_rng(&mut rand::rng());
         // According to Websockets RFC, all frames sent from the client,
         // needs to have the payload masked
         let mask = [
@@ -73,7 +79,12 @@ impl Writer {
             rng.random::<u8>(),
         ];
 
-        let first_byte = (frame.final_fragment as u8) << 7 | frame.opcode.as_u8();
+        let mut first_byte = (frame.final_fragment as u8) << 7 | frame.opcode.as_u8();
+
+        // Set the RSV1 bit if compression is enabled for this frame
+        if set_rsv1 {
+            first_byte |= 0x40; // Set RSV1
+        }
         let payload_len = frame.payload.len();
 
         self.write_half.write_all(&[first_byte]).await?;

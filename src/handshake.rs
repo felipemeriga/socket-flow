@@ -1,40 +1,37 @@
 use crate::config::{ClientConfig, WebSocketConfig};
 use crate::connection::WSConnection;
+use crate::decoder::Decoder;
+use crate::encoder::Encoder;
 use crate::error::Error;
+use crate::extensions::{add_extension_headers, merge_extensions, parse_extensions, Extensions};
 use crate::message::Message;
 use crate::read::ReadStream;
-use crate::request::{parse_to_http_request, RequestExt};
+use crate::request::{construct_http_request, HttpRequest};
 use crate::split::{WSReader, WSWriter};
 use crate::stream::SocketFlowStream;
+use crate::utils::{generate_websocket_accept_value, generate_websocket_key};
 use crate::write::{Writer, WriterKind};
-use base64::prelude::BASE64_STANDARD;
-use base64::prelude::*;
-use httparse::{Request, EMPTY_HEADER};
-use rand::random;
-use sha1::{Digest, Sha1};
 use std::fs::File;
 use std::io::BufReader as SyncBufReader;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::io::{split, AsyncReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
+use tokio::io::{split, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::channel;
 use tokio::sync::Mutex;
-use tokio::time::{timeout, Duration};
 use tokio_rustls::{TlsConnector, TlsStream};
 use tokio_stream::wrappers::ReceiverStream;
-
-const UUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-const SWITCHING_PROTOCOLS: &str = "101 Switching Protocols";
 
 pub(crate) const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\r\n\
         Connection: Upgrade\r\n\
         Upgrade: websocket\r\n\
         Sec-WebSocket-Accept: {}\r\n\
-        \r\n";
+        ";
 
 const HTTP_METHOD: &str = "GET";
 pub(crate) const SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";
+pub(crate) const SEC_WEBSOCKET_EXTENSIONS: &str = "Sec-WebSocket-Extensions";
+pub(crate) const SEC_WEBSOCKET_ACCEPT: &str = "Sec-WebSocket-Accept";
 const HOST: &str = "Host";
 
 pub type Result = std::result::Result<WSConnection, Error>;
@@ -56,16 +53,39 @@ pub async fn accept_async_with_config(
     let (reader, mut write_half) = split(stream);
     let mut buf_reader = BufReader::new(reader);
 
-    parse_handshake(&mut buf_reader, &mut write_half).await?;
+    let mut config = config.unwrap_or_default();
+    let parsed_extensions =
+        parse_handshake_server(&mut buf_reader, &mut write_half, config.extensions).await?;
+    config.extensions = parsed_extensions;
+
+    let decoder_extensions = config.extensions.clone().unwrap_or_default();
+    // The decoder will be reading and decompressing all client messages,
+    // so we need to pass all the client extensions to it
+    let decoder = Decoder::new(
+        decoder_extensions
+            .client_no_context_takeover
+            .unwrap_or_default(),
+        decoder_extensions.client_max_window_bits,
+    );
+
+    let encoder_extensions = config.extensions.clone().unwrap_or_default();
+    let encoder = Encoder::new(
+        encoder_extensions
+            .server_no_context_takeover
+            .unwrap_or_default(),
+        encoder_extensions.server_max_window_bits,
+    );
 
     // Identify permessage-deflate for enabling compression
     second_stage_handshake(
         buf_reader,
         write_half,
         WriterKind::Server,
-        config.unwrap_or_default(),
+        config,
+        decoder,
+        encoder,
     )
-    .await
+        .await
 }
 
 async fn second_stage_handshake(
@@ -73,6 +93,8 @@ async fn second_stage_handshake(
     write_half: WriteHalf<SocketFlowStream>,
     kind: WriterKind,
     config: WebSocketConfig,
+    decoder: Decoder,
+    encoder: Encoder,
 ) -> Result {
     // This writer instance would be used for writing frames into the socket.
     // Since it's going to be used by two different instances, we need to wrap it through an Arc
@@ -83,7 +105,8 @@ async fn second_stage_handshake(
     // ReadStream will be running on a separate task, capturing all the incoming frames from the connection, and broadcasting them through this
     // tokio mpsc channel. Therefore, it can be consumed by the end-user of this library
     let (read_tx, read_rx) = channel::<std::result::Result<Message, Error>>(20);
-    let mut read_stream = ReadStream::new(buf_reader, read_tx, stream_writer, config.clone());
+    let mut read_stream =
+        ReadStream::new(buf_reader, read_tx, stream_writer, config.clone(), decoder);
 
     let connection_writer = writer.clone();
     // Transforming the receiver of the channel into a Stream, so we could leverage using
@@ -94,7 +117,7 @@ async fn second_stage_handshake(
     // a stream of frames, for consuming the incoming frames, and methods for writing frames into
     // the socket
     let ws_connection = WSConnection::new(
-        WSWriter::new(connection_writer, config),
+        WSWriter::new(connection_writer, config, encoder),
         WSReader::new(receiver_stream),
     );
 
@@ -126,7 +149,9 @@ pub async fn connect_async(addr: &str) -> Result {
 pub async fn connect_async_with_config(addr: &str, client_config: Option<ClientConfig>) -> Result {
     let client_websocket_key = generate_websocket_key();
 
-    let (request, hostname, host, use_tls) = parse_to_http_request(addr, &client_websocket_key)?;
+    let client_extensions = client_config.clone().unwrap_or_default().web_socket_config.extensions;
+
+    let (request, hostname, host, use_tls) = construct_http_request(addr, &client_websocket_key, client_extensions)?;
 
     let stream = TcpStream::connect(hostname).await?;
 
@@ -172,80 +197,48 @@ pub async fn connect_async_with_config(addr: &str, client_config: Option<ClientC
 
     write_half.write_all(request.as_bytes()).await?;
 
-    // Create a buffer for the server's response, since most of the Websocket won't send a big payload
-    // for the handshake response, defining this size of Vector would be enough, and also will put a limit
-    // to bigger payloads
-    let mut buffer: Vec<u8> = vec![0; 206];
+    let mut config = client_config.unwrap_or_default().web_socket_config;
+    let extensions = parse_handshake_client(&mut buf_reader, client_websocket_key).await?;
+    config.extensions = extensions;
 
-    // Read the server's response
-    let number_read = buf_reader.read(&mut buffer).await?;
+    let decoder_extensions = config.extensions.clone().unwrap_or_default();
+    // The decoder will be reading and decompressing all client messages,
+    // so we need to pass all the client extensions to it
+    let decoder = Decoder::new(
+        decoder_extensions
+            .client_no_context_takeover
+            .unwrap_or_default(),
+        decoder_extensions.client_max_window_bits,
+    );
 
-    // Keep only the section of the buffer that was filled.
-    buffer.truncate(number_read);
-
-    // Convert the server's response to a string
-    let response = String::from_utf8(buffer)?;
-
-    // Verify that the server agreed to upgrade the connection
-    if !response.contains(SWITCHING_PROTOCOLS) {
-        return Err(Error::NoUpgrade);
-    }
-
-    // Generate the server expected accept key using UUID, and checking if it's present in the response
-    let expected_accept_value = generate_websocket_accept_value(client_websocket_key);
-    if !response.contains(&expected_accept_value) {
-        return Err(Error::InvalidAcceptKey);
-    }
+    let encoder_extensions = config.extensions.clone().unwrap_or_default();
+    let encoder = Encoder::new(
+        encoder_extensions
+            .server_no_context_takeover
+            .unwrap_or_default(),
+        encoder_extensions.server_max_window_bits,
+    );
 
     second_stage_handshake(
         buf_reader,
         write_half,
         WriterKind::Client,
-        client_config.unwrap_or_default().web_socket_config,
+        config,
+        decoder,
+        encoder,
     )
-    .await
+        .await
 }
 
-pub(crate) fn generate_websocket_accept_value(key: String) -> String {
-    let mut sha1 = Sha1::new();
-    sha1.update(key.as_bytes());
-    sha1.update(UUID.as_bytes());
-    BASE64_STANDARD.encode(sha1.finalize())
-}
-
-fn generate_websocket_key() -> String {
-    let random_bytes: [u8; 16] = random();
-    BASE64_STANDARD.encode(random_bytes)
-}
-
-async fn parse_handshake(
+async fn parse_handshake_server(
     buf_reader: &mut BufReader<ReadHalf<SocketFlowStream>>,
     write_half: &mut WriteHalf<SocketFlowStream>,
-) -> std::result::Result<(), Error> {
-    // Using a 1024 sized buffer, because since this is an opening handshake request,
-    // there won't be any cases where we have big requests, which also prevents malicious
-    // connections that sends a lot of data
-    let mut buffer = vec![0; 1024];
-
-    // Adding a timeout to the buffer read, since some attackers may only connect to the TCP
-    // endpoint, and froze without sending the HTTP handshake.
-    // Therefore, we need to drop all these cases
-    let read_result = timeout(Duration::from_secs(5), buf_reader.read(&mut buffer)).await;
-
-    let n = match read_result {
-        Ok(Ok(size)) => size,  // Continue processing the payload
-        Ok(Err(e)) => Err(e)?, // An error occurred while reading
-        Err(_e) => Err(_e)?,   // Reading from the socket timed out
-    };
-
-    // Parse the HTTP request from the buffer
-    let mut headers = [EMPTY_HEADER; 16];
-    let mut req = Request::new(&mut headers);
-
-    req.parse(&buffer[..n])?;
+    server_extensions: Option<Extensions>,
+) -> std::result::Result<Option<Extensions>, Error> {
+    let mut req = HttpRequest::parse_http_request(buf_reader).await?;
 
     // Validate the WebSocket handshake
-    if req.method != Some(HTTP_METHOD) || req.version != Some(1) {
+    if !req.method.eq(HTTP_METHOD) {
         return Err(Error::InvalidHTTPHandshake);
     }
 
@@ -258,14 +251,52 @@ async fn parse_handshake(
         None => Err(Error::NoSecWebsocketKey)?,
     };
 
+    let client_extensions = parse_extensions(
+        req.get_header_value(SEC_WEBSOCKET_EXTENSIONS)
+            .unwrap_or_default(),
+    );
+    let agreed_extensions = merge_extensions(server_extensions, client_extensions);
+
     let accept_key = generate_websocket_accept_value(sec_websocket_key);
 
-    let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
+    let mut response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
+    add_extension_headers(&mut response, agreed_extensions.clone());
+
     write_half
         .write_all(response.as_bytes())
         .await
         .map_err(|source| Error::IOError { source })?;
     write_half.flush().await?;
 
-    Ok(())
+    Ok(agreed_extensions)
+}
+
+async fn parse_handshake_client(
+    buf_reader: &mut BufReader<ReadHalf<SocketFlowStream>>,
+    client_websocket_key: String,
+) -> std::result::Result<Option<Extensions>, Error> {
+    let mut req = HttpRequest::parse_http_request(buf_reader).await?;
+
+    let expected_accept_value = generate_websocket_accept_value(client_websocket_key);
+
+    // Some websockets server returns the SEC_WEBSOCKET_ACCEPT header, as lowercase.
+    // Therefore, we need to cover both cases, for the sake of having support, even though it's
+    // out of RFC standards
+    let sec_websocket_accept = if let Some(value) = req.get_header_value(SEC_WEBSOCKET_ACCEPT) {
+        value
+    } else {
+        req.get_header_value(SEC_WEBSOCKET_ACCEPT.to_lowercase().as_str())
+            .unwrap_or_default()
+    };
+
+    if !sec_websocket_accept.contains(&expected_accept_value) {
+        return Err(Error::InvalidAcceptKey);
+    }
+
+    let extensions = parse_extensions(
+        req.get_header_value(SEC_WEBSOCKET_EXTENSIONS)
+            .unwrap_or_default(),
+    );
+
+    Ok(extensions)
 }

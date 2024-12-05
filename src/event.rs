@@ -13,7 +13,7 @@ pub type ID = Uuid;
 
 // Used for generating a new UUID, every time a new client connects the server
 pub fn generate_new_uuid() -> Uuid {
-    let mut rng = StdRng::from_rng(rand::thread_rng());
+    let mut rng = StdRng::from_rng(&mut rand::rng());
     let buf = rng.random::<[u8; 16]>();
 
     Uuid::new_v8(buf)

@@ -311,7 +311,7 @@ Finally, execute the client code:
 use futures::StreamExt;
 use log::*;
 use rand::distr::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use socket_flow::config::ClientConfig;
 use socket_flow::handshake::connect_async_with_config;
 use tokio::select;
@@ -372,7 +372,7 @@ async fn main() {
 }
 
 fn generate_random_string() -> String {
-    thread_rng()
+    rng()
         .sample_iter(&Alphanumeric)
         .take(30)
         .map(char::from)

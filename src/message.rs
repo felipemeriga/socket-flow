@@ -32,44 +32,4 @@ impl Message {
             Message::Binary(data) => Ok(String::from_utf8(data.clone())?),
         }
     }
-
-    // Function to convert Message to Frames
-    pub fn to_frames(self, max_frame_size: usize) -> Vec<Frame> {
-        let opcode = match self {
-            Message::Text(_) => OpCode::Text,
-            Message::Binary(_) => OpCode::Binary,
-        };
-
-        let payload = match self {
-            Message::Text(text) => text.into_bytes(),
-            Message::Binary(data) => data,
-        };
-
-        if payload.is_empty() {
-            return vec![Frame {
-                final_fragment: true,
-                opcode,
-                payload,
-            }];
-        }
-
-        let mut frames = Vec::new();
-        for chunk in payload.chunks(max_frame_size) {
-            frames.push(Frame {
-                final_fragment: false,
-                opcode: if frames.is_empty() {
-                    opcode.clone()
-                } else {
-                    OpCode::Continue
-                },
-                payload: chunk.to_vec(),
-            });
-        }
-
-        if let Some(last_frame) = frames.last_mut() {
-            last_frame.final_fragment = true;
-        }
-
-        frames
-    }
 }

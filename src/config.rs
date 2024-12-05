@@ -1,3 +1,4 @@
+use crate::extensions::Extensions;
 use rustls::ServerConfig as RustlsConfig;
 use std::sync::Arc;
 
@@ -32,6 +33,9 @@ pub struct ClientConfig {
     pub ca_file: Option<String>,
 }
 
+// TODO - Remove extensions, and only add an option named compression_enabled
+// and a second option for compression_threshold
+// then, behind the hood, set extensions all to true, and max window of 15
 /// Stores general configurations, to replace some default websockets connection parameters
 #[derive(Debug, Clone)]
 pub struct WebSocketConfig {
@@ -45,6 +49,9 @@ pub struct WebSocketConfig {
     /// maximum payload size a message can have.
     /// The default is 64 MiB, which is reasonably big.
     pub max_message_size: Option<usize>,
+    /// This represents the extensions that will be applied, enabling compression and
+    /// modifying relevant specs about server and client compression.
+    pub extensions: Option<Extensions>,
 }
 
 impl Default for WebSocketConfig {
@@ -52,6 +59,7 @@ impl Default for WebSocketConfig {
         WebSocketConfig {
             max_message_size: Some(64 << 20),
             max_frame_size: Some(16 << 20),
+            extensions: None,
         }
     }
 }

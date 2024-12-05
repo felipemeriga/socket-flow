@@ -1,9 +1,11 @@
 use crate::config::WebSocketConfig;
+use crate::decoder::Decoder;
 use crate::error::Error;
 use crate::frame::{Frame, OpCode};
 use crate::message::Message;
 use crate::stream::SocketFlowStream;
 use crate::write::Writer;
+use bytes::BytesMut;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, BufReader, ReadHalf};
 use tokio::sync::mpsc::Sender;
@@ -14,6 +16,7 @@ use tokio::time::{timeout, Duration};
 pub(crate) struct FragmentedMessage {
     fragments: Vec<u8>,
     op_code: OpCode,
+    compressed: bool,
 }
 
 pub struct ReadStream {
@@ -22,6 +25,7 @@ pub struct ReadStream {
     pub read_tx: Sender<Result<Message, Error>>,
     writer: Arc<Mutex<Writer>>,
     config: WebSocketConfig,
+    decoder: Decoder,
 }
 
 impl ReadStream {
@@ -30,6 +34,7 @@ impl ReadStream {
         read_tx: Sender<Result<Message, Error>>,
         writer: Arc<Mutex<Writer>>,
         config: WebSocketConfig,
+        decoder: Decoder,
     ) -> Self {
         let fragmented_message = None;
         Self {
@@ -38,9 +43,16 @@ impl ReadStream {
             read_tx,
             writer,
             config,
+            decoder,
         }
     }
 
+    // Compression plan for read.rs
+    // When rsv1 = 1, and compression is enabled, I will continue, otherwise will disconnect
+    // If FIN = 1, and it's compressed, I will unmask it and uncompress directly in read_frame function
+    // If FIN = 0, I will move the first match case of poll_messages to read_frame, start a new fragmented message
+    // and set a new attribute on the fragmented message, telling that it's fragmented
+    // when I receive the last fragment, I will uncompress the the entire payload: Vec<u8>
     pub async fn poll_messages(&mut self) -> Result<(), Error> {
         // Now in websocket mode, read frames
         loop {
@@ -55,6 +67,7 @@ impl ReadStream {
                                 self.fragmented_message = Some(FragmentedMessage {
                                     op_code: frame.opcode,
                                     fragments: frame.payload,
+                                    compressed: frame.compressed,
                                 });
                             } else {
                                 Err(Error::FragmentedInProgress)?
@@ -76,12 +89,18 @@ impl ReadStream {
                                     Err(Error::MaxMessageSize)?;
                                 }
 
-                                let fragmented_message_clone = fragmented_message.clone();
+                                let mut fragmented_message_clone = fragmented_message.clone();
                                 // If it's the final fragment, then you can process the complete message here.
                                 // You could move the message to somewhere else as well.
                                 if frame.final_fragment {
                                     // Clean the buffer after processing
                                     self.fragmented_message = None;
+                                    if fragmented_message_clone.compressed {
+                                        fragmented_message_clone.fragments =
+                                            self.decoder.decompress(&mut BytesMut::from(
+                                                &fragmented_message_clone.fragments[..],
+                                            ))?;
+                                    }
 
                                     // Since a clone copies the entire reference to a new reference,
                                     // if you change the original data,
@@ -93,6 +112,7 @@ impl ReadStream {
                                         true,
                                         fragmented_message_clone.op_code,
                                         fragmented_message_clone.fragments,
+                                        false,
                                     ))
                                     .await?;
                                 }
@@ -137,8 +157,12 @@ impl ReadStream {
     }
 
     async fn send_pong_frame(&mut self, payload: Vec<u8>) -> Result<(), Error> {
-        let pong_frame = Frame::new(true, OpCode::Pong, payload);
-        self.writer.lock().await.write_frame(pong_frame).await
+        let pong_frame = Frame::new(true, OpCode::Pong, payload, false);
+        self.writer
+            .lock()
+            .await
+            .write_frame(pong_frame, false)
+            .await
     }
 
     pub async fn read_frame(&mut self) -> Result<Frame, Error> {
@@ -156,21 +180,33 @@ impl ReadStream {
         // RSV is a short for "Reserved" fields, they are optional flags that aren't used by the
         // base websockets protocol, only if there is an extension of the protocol in use.
         // If these bits are received as non-zero in the absence of any defined extension, the connection
-        // needs to fail, immediately
+        // needs to fail immediately
         let rsv1 = (header[0] & 0b01000000) != 0;
         let rsv2 = (header[0] & 0b00100000) != 0;
         let rsv3 = (header[0] & 0b00010000) != 0;
 
-        if rsv1 || rsv2 || rsv3 {
+        if rsv2
+            || rsv3
+            || (rsv1
+                && !self
+                    .config
+                    .extensions
+                    .clone()
+                    .unwrap_or_default()
+                    .permessage_deflate)
+        {
             return Err(Error::RSVNotZero);
         }
 
-        // As a rule in websockets protocol, if your opcode is a control opcode(ping,pong,close), your message can't be fragmented(split between multiple frames)
+        // As a rule in websockets protocol,
+        // if your opcode is a control opcode(ping,pong,close), your message can't be fragmented
+        // (split between multiple frames)
         if !final_fragment && opcode.is_control() {
             Err(Error::ControlFramesFragmented)?;
         }
 
-        // According to the websocket protocol specification, the first bit of the second byte of each frame is the "Mask bit"
+        // According to the websocket protocol specification,
+        // the first bit of the second byte of each frame is the "Mask bit,"
         // it tells us if the payload is masked or not
         let masked = (header[1] & 0b10000000) != 0;
 
@@ -239,10 +275,17 @@ impl ReadStream {
             }
         }
 
+        // println!("payload size: {}", payload.len());
+        if rsv1 && final_fragment {
+            payload = self.decoder.decompress(&mut BytesMut::from(&payload[..]))?;
+            // Call your custom decompression function
+        }
+
         Ok(Frame {
             final_fragment,
             opcode,
             payload,
+            compressed: rsv1,
         })
     }
 
@@ -250,7 +293,7 @@ impl ReadStream {
         self.writer
             .lock()
             .await
-            .write_frame(Frame::new(true, OpCode::Close, Vec::new()))
+            .write_frame(Frame::new(true, OpCode::Close, Vec::new(), false), false)
             .await
     }
 

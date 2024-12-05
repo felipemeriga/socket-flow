@@ -45,14 +45,16 @@ pub struct Frame {
     pub final_fragment: bool,
     pub opcode: OpCode,
     pub payload: Vec<u8>,
+    pub compressed: bool,
 }
 
 impl Frame {
-    pub fn new(final_fragment: bool, opcode: OpCode, payload: Vec<u8>) -> Self {
+    pub fn new(final_fragment: bool, opcode: OpCode, payload: Vec<u8>, compressed: bool) -> Self {
         Self {
             final_fragment,
             opcode,
             payload,
+            compressed,
         }
     }
 }

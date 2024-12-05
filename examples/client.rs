@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use log::*;
 use rand::distr::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use socket_flow::handshake::connect_async;
 use tokio::select;
 use tokio::time::{interval, Duration};
@@ -58,7 +58,7 @@ async fn main() {
 }
 
 fn generate_random_string() -> String {
-    thread_rng()
+    rng()
         .sample_iter(&Alphanumeric)
         .take(30)
         .map(char::from)

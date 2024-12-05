@@ -8,12 +8,13 @@
 //! to implement the standards of [WebSocket Protocol RFC](https://datatracker.ietf.org/doc/html/rfc6455),
 //! performing handshakes, reading frames, parsing masks, handling opcodes and internal payload.
 //!
-
-mod compress;
 pub mod config;
 pub mod connection;
+mod decoder;
+mod encoder;
 pub mod error;
 pub mod event;
+pub mod extensions;
 mod frame;
 pub mod handshake;
 pub mod message;
@@ -23,4 +24,5 @@ pub mod server;
 pub mod split;
 pub mod stream;
 mod tests;
+mod utils;
 mod write;

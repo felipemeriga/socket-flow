@@ -1,18 +1,23 @@
 #[cfg(test)]
 mod tests {
     use crate::frame::{Frame, OpCode};
-    use crate::request::{parse_to_http_request, RequestExt};
+    use crate::request::{construct_http_request, HttpRequest};
 
-    use crate::handshake::{
-        accept_async, connect_async, generate_websocket_accept_value, HTTP_ACCEPT_RESPONSE,
-        SEC_WEBSOCKET_KEY,
-    };
+    use crate::extensions::{add_extension_headers, Extensions};
+    use crate::handshake::{accept_async, accept_async_with_config, connect_async, connect_async_with_config, HTTP_ACCEPT_RESPONSE, SEC_WEBSOCKET_KEY};
     use crate::stream::SocketFlowStream;
+    use crate::utils::generate_websocket_accept_value;
     use futures::StreamExt;
-    use httparse::{Request, EMPTY_HEADER};
     use std::error::Error;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use bytes::BytesMut;
+    use rand::Rng;
+    use tokio::io::{split, AsyncReadExt, AsyncWriteExt, BufReader};
     use tokio::net::{TcpListener, TcpStream};
+    use serde::Serialize;
+    use crate::config::{ClientConfig, WebSocketConfig};
+    use crate::decoder::Decoder;
+    use crate::encoder::Encoder;
+    use serde_json::json;
 
     #[test]
     fn test_opcode() {
@@ -33,7 +38,7 @@ mod tests {
         let final_fragment = false;
         let opcode = OpCode::Text;
         let payload: Vec<u8> = Vec::new();
-        let frame = Frame::new(final_fragment, opcode.clone(), payload.clone());
+        let frame = Frame::new(final_fragment, opcode.clone(), payload.clone(), false);
 
         assert_eq!(frame.final_fragment, final_fragment);
         assert_eq!(frame.opcode, opcode);
@@ -43,7 +48,7 @@ mod tests {
     #[test]
     fn test_parse_to_http_request_valid() {
         let (request, host_with_port, host, use_tls) =
-            parse_to_http_request("ws://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==").unwrap();
+            construct_http_request("ws://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==", None).unwrap();
         assert_eq!(host_with_port, "localhost:8080");
         assert_eq!(host, "localhost");
         assert_eq!(use_tls, false);
@@ -55,13 +60,13 @@ mod tests {
 
     #[test]
     fn test_parse_to_http_request_invalid_scheme() {
-        let result = parse_to_http_request("ftp://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==");
+        let result = construct_http_request("ftp://localhost:8080", "dGhlIHNhbXBsZSBub25jZQ==", None);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_to_http_request_no_host() {
-        let result = parse_to_http_request("ws://:8080", "dGhlIHNhbXBsZSBub25jZQ==");
+        let result = construct_http_request("ws://:8080", "dGhlIHNhbXBsZSBub25jZQ==", None);
         assert!(result.is_err());
     }
 
@@ -117,16 +122,14 @@ mod tests {
         // Simulate the server in a separate task
         let server = tokio::spawn(async move {
             // There is no need to split the stream, since we are doing everything inside this task
-            let (mut stream, _) = listener.accept().await.unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
 
-            // create a buffer for the incoming handshake request
-            let mut buffer: Vec<u8> = vec![0; 1024];
-            let n = stream.read(&mut buffer).await.unwrap();
+            let (read, mut write) = split(stream);
+            let mut buf_reader = BufReader::new(read);
 
-            let mut headers = [EMPTY_HEADER; 16];
-            let mut req = Request::new(&mut headers);
-
-            req.parse(&buffer[..n]).unwrap();
+            let mut req = HttpRequest::parse_http_request(&mut buf_reader)
+                .await
+                .unwrap();
 
             // Already testing get_header_value func, since it's easier than spliting the string to
             // find sec_websocket_key
@@ -134,9 +137,10 @@ mod tests {
 
             let accept_key = generate_websocket_accept_value(sec_websocket_key);
 
-            let response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
-            stream.write_all(response.as_bytes()).await.unwrap();
-            stream.flush().await.unwrap();
+            let mut response = HTTP_ACCEPT_RESPONSE.replace("{}", &accept_key);
+            add_extension_headers(&mut response, None);
+            write.write_all(response.as_bytes()).await.unwrap();
+            write.flush().await.unwrap();
         });
 
         // Call the connect_async function for connecting to the server
@@ -184,6 +188,140 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_accept_and_connect() -> Result<(), Box<dyn Error>> {
+        // Start a TCP listener (server) to accept a connection
+        let listener = TcpListener::bind("127.0.0.1:9007").await?; // bind to an available port
+        // payload to validate the message
+        let payload = vec![1, 2, 3, 4];
+
+        // Simulate the server in a separate task
+        let payload_clone = payload.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+
+            let mut server_connection = accept_async(SocketFlowStream::Plain(stream)).await.unwrap();
+            if let Some(result) = server_connection.next().await {
+                match result {
+                    Ok(message) => assert_eq!(message.as_binary(), payload_clone),
+                    Err(e) => panic!("Error occurred: {:?}", e),
+                };
+            }
+        });
+
+        // Call the connect_async function for connecting to the server
+        let mut client_connection = connect_async("ws://127.0.0.1:9007").await?;
+        // send the payload
+        client_connection.send(payload).await.unwrap();
+        client_connection.close_connection().await.unwrap();
+
+        server.await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_compress_decompress_payload_reset_context() -> Result<(), Box<dyn Error>> {
+        let payload = vec![1, 2, 3, 4, 5];
+
+        let mut encoder = Encoder::new(true, Some(15));
+        let mut decoder = Decoder::new(true, Some(15));
+
+        let encoded_data = encoder.compress(&mut BytesMut::from(&payload[..]))?;
+        let decoded_data = decoder.decompress(&mut BytesMut::from(&encoded_data[..]))?;
+
+        assert_eq!(payload, decoded_data);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_compress_decompress_payload_keep_context() -> Result<(), Box<dyn Error>> {
+        let payload = vec![1, 2, 3, 4, 5];
+
+        let mut encoder = Encoder::new(false, Some(15));
+        let mut decoder = Decoder::new(false, Some(15));
+
+        let encoded_data = encoder.compress(&mut BytesMut::from(&payload[..]))?;
+        let _ = decoder.decompress(&mut BytesMut::from(&encoded_data[..]))?;
+
+        let _ = encoder.compress(&mut BytesMut::from(&payload[..]))?;
+        let second_decoded_data = decoder.decompress(&mut BytesMut::from(&encoded_data[..]))?;
+
+        assert_eq!(payload, second_decoded_data);
+        Ok(())
+    }
+
+    #[derive(Serialize)]
+    struct User {
+        id: i32,
+        name: String,
+    }
+    fn generate_users() -> Vec<u8> {
+        let mut users: Vec<User> = Vec::new();
+
+        for id in 0..500 {
+            let name: String = rand::rng()
+                .sample_iter(&rand::distr::Alphanumeric)
+                .take(30)
+                .map(char::from)
+                .collect();
+
+            users.push(User { id, name });
+        }
+
+        let json = json!(&users);
+        let serialized = serde_json::to_string(&json).unwrap();
+        serialized.into_bytes()
+    }
+
+    #[tokio::test]
+    async fn test_accept_and_connect_extension() -> Result<(), Box<dyn Error>> {
+        // Start a TCP listener (server) to accept a connection
+        let listener = TcpListener::bind("127.0.0.1:9008").await?; // bind to an available port
+        let payload = generate_users();
+
+        // Simulate the server in a separate task
+        let payload_clone = payload.clone();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut config = WebSocketConfig::default();
+            config.extensions = Some(Extensions {
+                permessage_deflate: true,
+                client_no_context_takeover: Some(true),
+                server_no_context_takeover: Some(true),
+                client_max_window_bits: None,
+                server_max_window_bits: None,
+            });
+
+            let mut server_connection = accept_async_with_config(SocketFlowStream::Plain(stream), Some(config)).await.unwrap();
+            if let Some(result) = server_connection.next().await {
+                match result {
+                    Ok(message) => assert_eq!(message.as_binary(), payload_clone),
+                    Err(e) => panic!("Error occurred: {:?}", e),
+                };
+            }
+        });
+
+        let mut websocket_config = WebSocketConfig::default();
+        websocket_config.extensions = Some(Extensions {
+            permessage_deflate: true,
+            client_no_context_takeover: Some(true),
+            server_no_context_takeover: Some(true),
+            client_max_window_bits: None,
+            server_max_window_bits: None,
+        });
+        let mut client_config = ClientConfig::default();
+        client_config.web_socket_config = websocket_config;
+
+        // Call the connect_async function for connecting to the server
+        let mut client_connection = connect_async_with_config("ws://127.0.0.1:9008", Some(client_config)).await?;
+        // send the payload
+        client_connection.send(payload).await.unwrap();
+        client_connection.close_connection().await.unwrap();
+
+        server.await?;
         Ok(())
     }
 }
