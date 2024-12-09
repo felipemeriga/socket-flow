@@ -1,0 +1,25 @@
+[package]
+name = "socket-flow-fuzz"
+version = "0.1.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = "1.4.1"
+tokio = { version = "1.38.0", features = ["full"] }
+rand = "0.9.0-beta.0"
+base64 = "0.22.1"
+
+[dependencies.socket-flow]
+path = ".."
+
+[[bin]]
+name = "fuzz_target_1"
+path = "fuzz_targets/fuzz_target_1.rs"
+test = false
+doc = false
+bench = false
