@@ -86,14 +86,8 @@ pub fn merge_extensions(
     server_extensions: Option<Extensions>,
     client_extensions: Option<Extensions>,
 ) -> Option<Extensions> {
-    let server_ext = match server_extensions {
-        Some(ext) => ext,
-        None => return None,
-    };
-    let client_ext = match client_extensions {
-        Some(ext) => ext,
-        None => return None,
-    };
+    let server_ext = server_extensions?;
+    let client_ext = client_extensions?;
     let merged_extensions = Extensions {
         permessage_deflate: client_ext.permessage_deflate && server_ext.permessage_deflate,
         client_no_context_takeover: server_ext

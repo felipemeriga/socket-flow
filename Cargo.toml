@@ -70,3 +70,7 @@ name = "simple_server_tls"
 
 [[example]]
 name = "crypto_client"
+
+[[bin]]
+name = "load_generator"
+path = "benchmarking/load_generator.rs"
