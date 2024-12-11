@@ -29,10 +29,10 @@ pub(crate) const HTTP_ACCEPT_RESPONSE: &str = "HTTP/1.1 101 Switching Protocols\
         ";
 
 const HTTP_METHOD: &str = "GET";
-pub(crate) const SEC_WEBSOCKET_KEY: &str = "Sec-WebSocket-Key";
-pub(crate) const SEC_WEBSOCKET_EXTENSIONS: &str = "Sec-WebSocket-Extensions";
-pub(crate) const SEC_WEBSOCKET_ACCEPT: &str = "Sec-WebSocket-Accept";
-const HOST: &str = "Host";
+pub(crate) const SEC_WEBSOCKET_KEY: &str = "sec-websocket-key";
+pub(crate) const SEC_WEBSOCKET_EXTENSIONS: &str = "sec-websocket-extensions";
+pub(crate) const SEC_WEBSOCKET_ACCEPT: &str = "sec-websocket-accept";
+const HOST: &str = "host";
 
 pub type Result = std::result::Result<WSConnection, Error>;
 
@@ -282,13 +282,7 @@ async fn parse_handshake_client(
     // Some websockets server returns the SEC_WEBSOCKET_ACCEPT header, as lowercase.
     // Therefore, we need to cover both cases, for the sake of having support, even though it's
     // out of RFC standards
-    let sec_websocket_accept = if let Some(value) = req.get_header_value(SEC_WEBSOCKET_ACCEPT) {
-        value
-    } else {
-        req.get_header_value(SEC_WEBSOCKET_ACCEPT.to_lowercase().as_str())
-            .unwrap_or_default()
-    };
-
+    let sec_websocket_accept =  req.get_header_value(SEC_WEBSOCKET_ACCEPT).unwrap_or_default();
     if !sec_websocket_accept.contains(&expected_accept_value) {
         return Err(Error::InvalidAcceptKey);
     }

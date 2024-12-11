@@ -114,7 +114,7 @@ impl HttpRequest {
         let mut headers = HashMap::new();
         for line in lines {
             if let Some((key, value)) = line.split_once(": ") {
-                headers.insert(key.to_string(), value.trim().to_string());
+                headers.insert(key.to_string().to_lowercase(), value.trim().to_string());
             }
         }
 
