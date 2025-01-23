@@ -1,64 +1,61 @@
 # socket-flow
 
-Straightforward async Websockets library for Rust! With a lot of examples available!
+Straightforward async WebSocket library for Rust! With plenty of examples available!
 
-[![Apache licensed](https://img.shields.io/badge/license-Apache-blue.svg)](https://github.com/felipemeriga/socket-flow/blob/main/LICENSE)
+[![Apache licensed](https://img.shields.io/badge/license-Apache-blue.svg)](https://github.com/felipemeriga/socket-flow/blob/main/LICENSE)  
 [![Crates.io](https://img.shields.io/crates/v/socket-flow.svg)](https://crates.io/crates/socket-flow)
+
+---
 
 ## Introduction
 
-This library is supposed to offer a simple implementation for websockets, so end-user could use this
-to wrap a websockets server/client into their application, offering a smooth way of setting it up into his code.
+`socket-flow` is a lightweight library designed to simplify the implementation of WebSocket connections in Rust. Whether you need a WebSocket server or client, this library provides an easy-to-use and efficient solution.
 
-It's an async library based on tokio runtime,
-which uses a tokio TcpStream behind the scenes, using that as the starting point
-to implement the standards of [WebSocket Protocol RFC](https://datatracker.ietf.org/doc/html/rfc6455),
-performing handshakes, reading frames, parsing masks, handling opcodes and internal payload.
+Built on top of the asynchronous `tokio` runtime, `socket-flow` leverages `tokio::TcpStream` to implement the standards of the [WebSocket Protocol RFC 6455](https://datatracker.ietf.org/doc/html/rfc6455). It handles:
 
-Can be used as a client or server,
-returning a `WSConnection`, which implements the `Stream` trait,
-so you can continuously consume incoming messages, or send messages.
+- WebSocket handshakes
+- Frame reading and parsing
+- Mask and opcode handling
+- Payload management
 
-The motivation behind this, was to offer a simple way of having a WebSockets connection over your application, using as a 
-reference wide established libraries, like  [`tungstenite-rs`](https://github.com/snapview/tungstenite-rs) and [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite/tree/master)
+This library was inspired by well-established WebSocket libraries such as [`tungstenite-rs`](https://github.com/snapview/tungstenite-rs) and [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite). Its goal is to offer a more accessible way to integrate WebSocket connections into applications while maintaining flexibility and performance.
+
+---
 
 ## Features
 
-Most of all WebSockets RFC features are implemented, like:
-- Handshake process, key parsing and generation
-- OpCodes handling, like `Text`, `Binary`, `Ping`, `Pong` and `Continue`
-- Multiple subscriptions
-- Scalability
-- Error handling
-- It passes the autobahn-test-suite
-- TLS Support
-- Extensions (Compression and Decompression by permessage-deflate)
+`socket-flow` implements most features defined in the WebSocket RFC:
 
-## Usage
+- Handshake process with key parsing and generation
+- Opcode handling (`Text`, `Binary`, `Ping`, `Pong`, and `Continuation` frames)
+- Multi-client support and scalability
+- Robust error handling
+- Passes the [Autobahn Test Suite](https://github.com/crossbario/autobahn-testsuite)
+- TLS support via [tokio-rustls](https://github.com/rustls/tokio-rustls)
+- Extensions for compression and decompression using permessage-deflate
 
-Add this in your `Cargo.toml`:
+---
+
+## Getting Started
+
+Add `socket-flow` to your `Cargo.toml` dependencies:
 
 ```toml
 [dependencies]
 socket-flow = "*"
 ```
 
-## Examples of usage
+---
 
-This repo has different examples and flexible ways of using its dependencies to design the 
-code as end-user needs.
+## Usage Examples
 
-We have the option of configuring all from scratch, creating the TcpListener, and managing the websockets connections,
-and we also have a plug-and-play option, which you can generate a Websockets server, with fewer lines of code.
+The repository includes several examples showcasing different ways to use `socket-flow`. It provides both a "plug-and-play" server setup and more customizable approaches, allowing developers to tailor the library to their needs.
 
-### Plug and play server
+### Plug-and-Play Server
 
-This is a very practical example, because you can have a server with just calling `start_server` function, which returns
-an `EventStream`, for consuming server events, like new connections, messages, errors and disconnections.
+With the `start_server` function, you can quickly spin up a WebSocket server. The function returns an `EventStream`, which allows you to consume server events like new connections, messages, errors, and disconnections.
 
-You can also find in: [Example](https://github.com/felipemeriga/socket-flow/blob/main/examples/simple_server.rs)
-
-The `start_server` function also accepts a `rustls::ServerConfig` for enabling TLS in your server.
+#### Code Example:
 
 ```rust
 use futures::StreamExt;
@@ -85,8 +82,9 @@ async fn main() {
                     }
                     Event::NewMessage(client_id, message) => {
                         info!("Message from client {}: {:?}", client_id, message);
-                        let ws_writer = clients.get_mut(&client_id).unwrap();
-                        ws_writer.send_message(message).await.unwrap();
+                        if let Some(ws_writer) = clients.get_mut(&client_id) {
+                            ws_writer.send_message(message).await.unwrap();
+                        }
                     }
                     Event::Disconnect(client_id) => {
                         info!("Client {} disconnected", client_id);
@@ -99,48 +97,49 @@ async fn main() {
             }
         }
         Err(err) => {
-            eprintln!("Could not start the server due to: {:?}", err);
+            eprintln!("Could not start the server: {:?}", err);
         }
     }
 }
 ```
 
-For running this example, you can clone the repo and execute:
-```shell
-cargo run --color=always --package socket-flow --example simple_server
+Run this example with:
+
+```sh
+cargo run --example simple_server
 ```
 
-### Echo server
-Here is an echo-server example that you can also find in:
-[Example](https://github.com/felipemeriga/socket-flow/blob/main/examples/echo_server.rs)
+---
+
+### Echo Server
+
+The echo server accepts incoming connections, performs the WebSocket handshake, and echoes back messages.
+
+#### Code Example:
 
 ```rust
 use futures::StreamExt;
 use log::*;
 use socket_flow::handshake::accept_async;
 use socket_flow::stream::SocketFlowStream;
-use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 
-async fn handle_connection(_: SocketAddr, stream: TcpStream) {
-    match accept_async(SocketFlowStream::Plain(stream)).await {
-        Ok(mut ws_connection) => {
-            while let Some(result) = ws_connection.next().await {
-                match result {
-                    Ok(message) => {
-                        if ws_connection.send_message(message).await.is_err() {
-                            error!("Failed to send message");
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        error!("Received error from the stream: {}", e);
+async fn handle_connection(stream: TcpStream) {
+    if let Ok(mut ws_connection) = accept_async(SocketFlowStream::Plain(stream)).await {
+        while let Some(result) = ws_connection.next().await {
+            match result {
+                Ok(message) => {
+                    if ws_connection.send_message(message).await.is_err() {
+                        error!("Failed to send message");
                         break;
                     }
                 }
+                Err(err) => {
+                    error!("Stream error: {}", err);
+                    break;
+                }
             }
         }
-        Err(err) => error!("Error when performing handshake: {}", err),
     }
 }
 
@@ -152,132 +151,131 @@ async fn main() {
     let listener = TcpListener::bind(&addr).await.expect("Can't listen");
     info!("Listening on: {}", addr);
 
-    while let Ok((stream, peer)) = listener.accept().await {
-        info!("Peer address: {}", peer);
-        tokio::spawn(handle_connection(peer, stream));
+    while let Ok((stream, _)) = listener.accept().await {
+        tokio::spawn(handle_connection(stream));
     }
 }
 ```
 
-For running this example, you can clone the repo and execute:
-```shell
-cargo run --color=always --package socket-flow --example echo_server
+Run this example with:
+
+```sh
+cargo run --example echo_server
 ```
 
-This example, creates a TcpListener, binding it to a port, accepting connections, handling each of these connections
-inside a tokio task, for handling clients concurrently. The handle_connection function, make sure the handshake process
-is performed, returning a `WSConnection`, which implements `Stream` trait, where you can consume incoming data for this client, 
-and perform write operations into the socket.
-It includes error handling through `Result`.
+---
 
-### Simple client
+### Simple Client
 
-Here is an example of how to run a client, that will perform some operations and disconnect gracefully:
+A client example demonstrates sending messages and gracefully closing the connection after three exchanges.
+
+#### Code Example:
+
 ```rust
 use futures::StreamExt;
 use log::*;
-use rand::distr::Alphanumeric;
-use rand::{rng, Rng};
 use socket_flow::handshake::connect_async;
-use tokio::select;
 use tokio::time::{interval, Duration};
 
 async fn handle_connection(addr: &str) {
-    match connect_async(addr).await {
-        Ok(mut ws_connection) => {
-            let mut ticker = interval(Duration::from_secs(5));
-            // it will be used for closing the connection
-            let mut counter = 0;
+    if let Ok(mut ws_connection) = connect_async(addr).await {
+        let mut ticker = interval(Duration::from_secs(5));
+        let mut counter = 0;
 
-            loop {
-                select! {
-                    Some(result) = ws_connection.next() => {
-                        match result {
-                            Ok(message) => {
-                                 info!("Received message: {}", message.as_text().unwrap());
-                                counter = counter + 1;
-                                // close the connection if 3 messages have already been sent and received
-                                if counter >= 3 {
-                                    if ws_connection.close_connection().await.is_err() {
-                                         error!("Error occurred when closing connection");
-                                    }
-                                    break;
-                                }
-                            }
-                            Err(err) => {
-                                error!("Received error from the stream: {}", err);
-
+        loop {
+            tokio::select! {
+                Some(result) = ws_connection.next() => {
+                    match result {
+                        Ok(message) => {
+                            info!("Received: {:?}", message);
+                            counter += 1;
+                            if counter >= 3 {
+                                ws_connection.close_connection().await.unwrap();
                                 break;
                             }
                         }
-                    }
-                    _ = ticker.tick() => {
-                        let random_string = generate_random_string();
-                        let binary_data = Vec::from(random_string);
-
-                        if ws_connection.send(binary_data).await.is_err() {
-                            eprintln!("Failed to send message");
+                        Err(err) => {
+                            error!("Error: {}", err);
                             break;
                         }
                     }
                 }
+                _ = ticker.tick() => {
+                    let msg = "Hello, WebSocket!".to_string();
+                    ws_connection.send(msg.into_bytes()).await.unwrap();
+                }
             }
         }
-        Err(err) => error!("Error when performing handshake: {}", err),
     }
 }
 
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    handle_connection("ws://localhost:9002").await;
-}
-
-fn generate_random_string() -> String {
-    rng()
-        .sample_iter(&Alphanumeric)
-        .take(30)
-        .map(char::from)
-        .collect()
+    handle_connection("ws://127.0.0.1:9002").await;
 }
 ```
 
-Since you need a server for testing the client, you can execute our echo-server example, and on another tab
-execute the client example:
-```shell
-cargo run --color=always --package socket-flow --example client
+Run this example with:
+
+```sh
+cargo run --example client
 ```
 
-In this example, the client will try to connect to `ws://127.0.0.1:9002`,
-if the connection is established, it will start sending random strings every 5 seconds into the socket.
-After sending three strings, it will close the connection gracefully and end its execution.
-
-You can check more examples over [Examples](https://github.com/felipemeriga/socket-flow/tree/main/examples).
+---
 
 ## Testing
 
-Socket-flow passes the [Autobahn Test Suite](https://github.com/crossbario/autobahn-testsuite) for
-WebSockets.
-Also, it has some internal tests, for ensuring reliability.
+- The library passes the [Autobahn Test Suite](https://github.com/crossbario/autobahn-testsuite) for WebSocket compliance.
+- Internal tests ensure reliability.
 
-## TLS/SSL
+---
 
-By default, this library only accepts [tokio-rustls](https://github.com/rustls/tokio-rustls), as an adapter library
-for adding TLS in your client/server implementation with socket-flow.
+## TLS/SSL Support
 
-For checking how to set up TLS in server/client,
-and finding some examples, go to: [TLS Examples](https://github.com/felipemeriga/socket-flow/blob/main/TLS.md).
+TLS is supported via [tokio-rustls](https://github.com/rustls/tokio-rustls).
 
-## Config and Compression
+Find setup details in the [TLS Examples](https://github.com/felipemeriga/socket-flow/blob/main/TLS.md).
 
-For setting some parameters of your websockets connection, and enabling compression and decompression, 
-you can check how to set up that over [Config and Extensions](https://github.com/felipemeriga/socket-flow/blob/main/CONFIG.md).
+---
+
+## Configuration and Compression
+
+Learn how to configure WebSocket parameters and enable compression/decompression via permessage-deflate in the [Config and Extensions Guide](https://github.com/felipemeriga/socket-flow/blob/main/CONFIG.md).
+Compared to another libraries, where you need to configure compression by yourself, you just need to activate it through this
+library config.
+
+---
 
 ## References
 
 - [`tungstenite-rs`](https://github.com/snapview/tungstenite-rs)
-- [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite/tree/master)
+- [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite)
 - [`tokio-rustls`](https://github.com/rustls/tokio-rustls)
 
+---
 
+Here’s a new section for the `README.md` highlighting why developers should use `socket-flow` and how it differentiates itself from other libraries like `tokio-tungstenite`:
 
+---
+
+## Why Choose Socket-Flow?
+
+When developing WebSocket-based applications, ease of use and feature completeness are crucial factors in selecting the right library. Here's why `socket-flow` stands out compared to other libraries like `tokio-tungstenite`:
+
+### 1. **Ease of Setup**
+Unlike many WebSocket libraries that require complex configurations or additional setup, `socket-flow` provides a developer-friendly interface to get started quickly. Whether you're creating a WebSocket server or client, `socket-flow` offers both "plug-and-play" and fully configurable approaches to fit your needs.
+
+- **Plug-and-Play:** Get a WebSocket server running with minimal lines of code using the `start_server` function, which handles connections, messages, errors, and disconnections for you.
+- **Fully Configurable:** For advanced use cases, `socket-flow` allows you to customize your WebSocket setup while still benefiting from its comprehensive features.
+
+### 2. **Built-In Compression/Decompression**
+WebSocket compression is essential for reducing bandwidth and optimizing data transfer. While other libraries like `tokio-tungstenite` support WebSocket compression, they often only allow basic context management between messages (reset or reuse), requiring you to implement additional logic for advanced configurations.
+
+`socket-flow` simplifies this by offering built-in support for **permessage-deflate** compression and decompression. All you need to do is provide a configuration, and the library takes care of the rest. You can easily configure parameters such as:
+
+- Compression level
+- Memory usage
+- Context resetting or keeping between messages
+
+This out-of-the-box support saves time and eliminates the need for extending or modifying the library yourself.
